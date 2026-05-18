@@ -1,5 +1,5 @@
 ---
-name: second-brain-ingest
+name: ingest
 description: >
   Process raw source documents into wiki pages. Use when the user adds
   files to raw/ and wants them ingested, says "process this source",
@@ -127,6 +127,6 @@ Tell the user what was done:
 ## What's Next
 
 After ingesting sources, the user can:
-- **Ask questions** with `/second-brain-query` to explore what was ingested
-- **Ingest more sources** — clip another article and run `/second-brain-ingest` again
-- **Health-check** with `/second-brain-lint` after every 10 ingests to catch gaps
+- **Ask questions** with `/second-brain:query` to explore what was ingested
+- **Ingest more sources** — clip another article and run `/second-brain:ingest` again
+- **Health-check** with `/second-brain:lint` after every 10 ingests to catch gaps
