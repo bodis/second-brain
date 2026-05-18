@@ -93,9 +93,9 @@ Replace these placeholders:
 Use the user's answer from Step 4:
 
 - If (a) Just this vault — run:
-  `python3 <skill-directory>/scripts/register-plugin.py --scope project --vault <vault-path>`
+  `node <skill-directory>/scripts/register-plugin.js --scope project --vault <vault-path>`
 - If (b) All my projects — run:
-  `python3 <skill-directory>/scripts/register-plugin.py --scope user`
+  `node <skill-directory>/scripts/register-plugin.js --scope user`
 - If (c) Skip — print the two snippets below so the user can register manually later:
   - Project-scope: contents of the registration block with the plugin's absolute path filled in, to be merged into `<vault>/.claude/settings.json`
   - User-scope: the contents of `docs/install/user-home-settings.json` (point them at the file path)
@@ -139,7 +139,7 @@ These files are bundled with this skill and available under `<skill-directory>/`
 - `wiki-schema.md` — canonical wiki rules (single source of truth for all agent configs)
 - `tooling.md` — CLI tool details, install commands, and verification steps
 - `agent-configs/claude-code.md` — CLAUDE.md template
-- `scripts/register-plugin.py` — merges plugin registration into a Claude Code settings.json (used by post-wizard Step 3)
+- `scripts/register-plugin.js` — merges plugin registration into a Claude Code settings.json (used by post-wizard Step 3)
 
 ## Next Steps
 
