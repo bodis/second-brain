@@ -114,7 +114,7 @@ Web-clipped articles often include images. Handle them as follows:
 
 ## Lint Frequency
 
-Run a lint pass (`/second-brain-lint`) on this schedule:
+Run a lint pass (`/second-brain:lint`) on this schedule:
 - **After every 10 ingests** — catches cross-reference gaps while they're fresh
 - **Monthly at minimum** — catches stale claims and orphan pages that accumulate over time
 - **Before any major query or synthesis** — ensures the wiki is healthy before you rely on it for analysis
