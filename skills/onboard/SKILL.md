@@ -43,7 +43,14 @@ Accept free text. Use this to:
 - Write a one-line domain description for the agent config
 - Generate 5-8 suggested domain-specific tags
 
-### Step 4: (settings scope — added in Task 10)
+### Step 4: Settings Scope
+
+Ask:
+> "Where should I register this plugin so it auto-loads next time?"
+>
+> (a) Just this vault → writes `<vault>/.claude/settings.json` *(default)*
+> (b) All my projects → merges into `~/.claude/settings.json`
+> (c) Skip — I'll handle this manually
 
 ### Step 5: Optional CLI Tools
 
@@ -81,7 +88,21 @@ Replace these placeholders:
 - `{{DOMAIN_TAGS}}` — generate 5–8 domain-relevant tags as a bullet list based on the domain from Step 3
 - `{{WIKI_SCHEMA}}` — read `<skill-directory>/references/wiki-schema.md` and insert everything from `## Architecture` onward
 
-### 3. Update wiki/log.md
+### 3. Register the plugin in settings.json
+
+Use the user's answer from Step 4:
+
+- If (a) Just this vault — run:
+  `python3 <skill-directory>/scripts/register-plugin.py --scope project --vault <vault-path>`
+- If (b) All my projects — run:
+  `python3 <skill-directory>/scripts/register-plugin.py --scope user`
+- If (c) Skip — print the two snippets below so the user can register manually later:
+  - Project-scope: contents of the registration block with the plugin's absolute path filled in, to be merged into `<vault>/.claude/settings.json`
+  - User-scope: the contents of `docs/install/user-home-settings.json` (point them at the file path)
+
+The script is idempotent — running it again on a future onboarding pass is safe.
+
+### 4. Update wiki/log.md
 
 Append the setup entry:
 
@@ -91,7 +112,7 @@ Created vault "{{VAULT_NAME}}" for {{DOMAIN_DESCRIPTION}}.
 Agent config: CLAUDE.md.
 ```
 
-### 4. Install CLI tools (if selected)
+### 5. Install CLI tools (if selected)
 
 For each tool the user selected in Step 5, run the install command:
 
@@ -101,7 +122,7 @@ For each tool the user selected in Step 5, run the install command:
 
 After each install, verify with `<tool> --version`. Report success or failure for each.
 
-### 5. Print summary
+### 6. Print summary
 
 Show the user:
 
@@ -113,11 +134,12 @@ Show the user:
 
 ## Reference Files
 
-These files are bundled with this skill and available at `<skill-directory>/references/`:
+These files are bundled with this skill and available under `<skill-directory>/`:
 
 - `wiki-schema.md` — canonical wiki rules (single source of truth for all agent configs)
 - `tooling.md` — CLI tool details, install commands, and verification steps
 - `agent-configs/claude-code.md` — CLAUDE.md template
+- `scripts/register-plugin.py` — merges plugin registration into a Claude Code settings.json (used by post-wizard Step 3)
 
 ## Next Steps
 
