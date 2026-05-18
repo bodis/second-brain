@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "second-brain",
-      "source": "."
+      "source": "./"
     }
   ]
 }
