@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ONBOARDING="$REPO_ROOT/skills/second-brain/scripts/onboarding.sh"
+ONBOARDING="$REPO_ROOT/skills/onboard/scripts/onboarding.sh"
 TEST_DIR=$(mktemp -d)
 TEST_VAULT="$TEST_DIR/test-vault"
 
