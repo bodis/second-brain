@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "second-brain": {
+      "source": {
+        "source": "directory",
+        "path": "/absolute/path/to/second-brain"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "second-brain@second-brain": true
+  }
+}
