@@ -7,3 +7,10 @@ node_modules/
 *.pem
 *.key
 credentials*
+
+# Editor / IDE
+.vscode/
+
+# Local Claude Code state created when running `claude --plugin-dir .` inside
+# this repo for development. Not part of the plugin distribution.
+.claude/
