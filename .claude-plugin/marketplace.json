@@ -1,0 +1,10 @@
+{
+  "name": "second-brain",
+  "owner": { "name": "Tamás Bódis" },
+  "plugins": [
+    {
+      "name": "second-brain",
+      "source": "."
+    }
+  ]
+}
