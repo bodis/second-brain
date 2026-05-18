@@ -1,10 +1,10 @@
 ---
-name: second-brain
+name: onboard
 description: >
   Set up a new Obsidian knowledge base with the LLM Wiki pattern. Use when
   the user wants to create a second brain, initialize a vault, set up a
   personal knowledge base, or says "onboard". Guides through an interactive
-  wizard to configure vault name, location, domain, agent support, and tooling.
+  wizard to configure vault name, location, domain, and tooling.
 allowed-tools: Bash Read Write Glob Grep
 ---
 
@@ -43,22 +43,14 @@ Accept free text. Use this to:
 - Write a one-line domain description for the agent config
 - Generate 5-8 suggested domain-specific tags
 
-### Step 4: Agent Config
+### Step 4: Settings Scope
 
-Auto-detect which agent is running this skill. State it clearly:
-> "I'm running in **[Agent Name]**, so I'll generate a **[config file]** for this vault."
-
-Then ask:
-> "Do you use any other AI agents you'd like config files for? Options: Claude Code, Codex, Cursor, Gemini CLI — or skip."
-
-Skip the agent that was auto-detected. Generate configs for all selected agents.
-
-**Agent detection logic:**
-- If the `CLAUDE.md` convention is being used or the Skill tool is Claude Code's → Claude Code
-- If the environment indicates Codex → Codex
-- If `.cursor/` exists in the working directory → Cursor
-- If `GEMINI.md` convention is being used → Gemini CLI
-- If unsure, ask the user which agent they're using
+Ask:
+> "Where should I register this plugin so it auto-loads next time?"
+>
+> (a) Just this vault → writes `<vault>/.claude/settings.json` *(default)*
+> (b) All my projects → merges into `~/.claude/settings.json`
+> (c) Skip — I'll handle this manually
 
 ### Step 5: Optional CLI Tools
 
@@ -85,37 +77,42 @@ bash <skill-directory>/scripts/onboarding.sh <vault-path>
 
 This creates all directories and the initial `wiki/index.md` and `wiki/log.md` files.
 
-### 2. Generate agent config file(s)
+### 2. Generate the agent config file
 
-For each selected agent, read the corresponding template from `<skill-directory>/references/agent-configs/`:
+Read the template at `<skill-directory>/references/agent-configs/claude-code.md` and write the generated config to `<vault>/CLAUDE.md`.
 
-| Agent | Template | Output File | Output Location |
-|---|---|---|---|
-| Claude Code | `claude-code.md` | `CLAUDE.md` | Vault root |
-| Codex | `codex.md` | `AGENTS.md` | Vault root |
-| Cursor | `cursor.md` | `second-brain.mdc` | `<vault>/.cursor/rules/` |
-| Gemini CLI | `gemini.md` | `GEMINI.md` | Vault root |
+Replace these placeholders:
 
-For each template, replace the placeholders:
+- `{{VAULT_NAME}}` — the vault name from Step 1
+- `{{DOMAIN_DESCRIPTION}}` — a one-line description derived from Step 3
+- `{{DOMAIN_TAGS}}` — generate 5–8 domain-relevant tags as a bullet list based on the domain from Step 3
+- `{{WIKI_SCHEMA}}` — read `<skill-directory>/references/wiki-schema.md` and insert everything from `## Architecture` onward
 
-- `{{VAULT_NAME}}` → the vault name from Step 1
-- `{{DOMAIN_DESCRIPTION}}` → a one-line description derived from Step 3
-- `{{DOMAIN_TAGS}}` → generate 5-8 domain-relevant tags as a bullet list based on the domain from Step 3
-- `{{WIKI_SCHEMA}}` → read `<skill-directory>/references/wiki-schema.md` and insert everything from `## Architecture` onward
+### 3. Register the plugin in settings.json
 
-Write the generated config to the vault.
+Use the user's answer from Step 4:
 
-### 3. Update wiki/log.md
+- If (a) Just this vault — run:
+  `node <skill-directory>/scripts/register-plugin.js --scope project --vault <vault-path>`
+- If (b) All my projects — run:
+  `node <skill-directory>/scripts/register-plugin.js --scope user`
+- If (c) Skip — print the two snippets below so the user can register manually later:
+  - Project-scope: contents of the registration block with the plugin's absolute path filled in, to be merged into `<vault>/.claude/settings.json`
+  - User-scope: the contents of `docs/install/user-home-settings.json` (point them at the file path)
+
+The script is idempotent — running it again on a future onboarding pass is safe.
+
+### 4. Update wiki/log.md
 
 Append the setup entry:
 
 ```
 ## [YYYY-MM-DD] setup | Vault initialized
 Created vault "{{VAULT_NAME}}" for {{DOMAIN_DESCRIPTION}}.
-Agent configs: {{list of generated config files}}.
+Agent config: CLAUDE.md.
 ```
 
-### 4. Install CLI tools (if selected)
+### 5. Install CLI tools (if selected)
 
 For each tool the user selected in Step 5, run the install command:
 
@@ -125,7 +122,7 @@ For each tool the user selected in Step 5, run the install command:
 
 After each install, verify with `<tool> --version`. Report success or failure for each.
 
-### 5. Print summary
+### 6. Print summary
 
 Show the user:
 
@@ -133,24 +130,22 @@ Show the user:
 2. **Required next step** — install the Obsidian Web Clipper browser extension:
    > Install the Obsidian Web Clipper to easily save web articles into your vault:
    > https://chromewebstore.google.com/detail/obsidian-web-clipper/cnjifjpddelmedmihgijeibhnjfabmlf
-3. **How to start** — open the vault folder in Obsidian, clip an article to `raw/`, then run `/second-brain-ingest`
+3. **How to start** — open the vault folder in Obsidian, clip an article to `raw/`, then run `/second-brain:ingest`
 
 ## Reference Files
 
-These files are bundled with this skill and available at `<skill-directory>/references/`:
+These files are bundled with this skill and available under `<skill-directory>/`:
 
 - `wiki-schema.md` — canonical wiki rules (single source of truth for all agent configs)
 - `tooling.md` — CLI tool details, install commands, and verification steps
 - `agent-configs/claude-code.md` — CLAUDE.md template
-- `agent-configs/codex.md` — AGENTS.md template
-- `agent-configs/cursor.md` — Cursor rules template
-- `agent-configs/gemini.md` — GEMINI.md template
+- `scripts/register-plugin.js` — merges plugin registration into a Claude Code settings.json (used by post-wizard Step 3)
 
 ## Next Steps
 
 After setup is complete, the user's workflow is:
 
 1. **Clip articles** to `raw/` using the Obsidian Web Clipper
-2. **Ingest sources** with `/second-brain-ingest` — processes raw files into wiki pages
-3. **Ask questions** with `/second-brain-query` — searches and synthesizes from the wiki
-4. **Health-check** with `/second-brain-lint` — run after every 10 ingests or monthly
+2. **Ingest sources** with `/second-brain:ingest` — processes raw files into wiki pages
+3. **Ask questions** with `/second-brain:query` — searches and synthesizes from the wiki
+4. **Health-check** with `/second-brain:lint` — run after every 10 ingests or monthly

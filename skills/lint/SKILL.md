@@ -1,5 +1,5 @@
 ---
-name: second-brain-lint
+name: lint
 description: >
   Health-check the wiki for contradictions, orphan pages, stale claims,
   and missing cross-references. Use when the user says "audit",
@@ -119,5 +119,5 @@ Append to `wiki/log.md`:
 
 ## Related Skills
 
-- `/second-brain-ingest` — process new sources into wiki pages
-- `/second-brain-query` — ask questions against the wiki
+- `/second-brain:ingest` — process new sources into wiki pages
+- `/second-brain:query` — ask questions against the wiki

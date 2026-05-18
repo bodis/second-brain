@@ -1,5 +1,5 @@
 ---
-name: second-brain-query
+name: query
 description: >
   Answer questions against the knowledge base wiki. Use when the user
   asks a question about their collected knowledge, wants to explore
@@ -72,5 +72,5 @@ If the user agrees:
 
 ## Related Skills
 
-- `/second-brain-ingest` — process new sources into wiki pages
-- `/second-brain-lint` — health-check the wiki for issues
+- `/second-brain:ingest` — process new sources into wiki pages
+- `/second-brain:lint` — health-check the wiki for issues

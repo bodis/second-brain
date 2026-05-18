@@ -8,35 +8,9 @@ node_modules/
 *.key
 credentials*
 
-# npx skills install artifacts
-.agents/
-.adal/
-.augment/
-.bob/
+# Editor / IDE
+.vscode/
+
+# Local Claude Code state created when running `claude --plugin-dir .` inside
+# this repo for development. Not part of the plugin distribution.
 .claude/
-.codebuddy/
-.commandcode/
-.continue/
-.cortex/
-.crush/
-.factory/
-.goose/
-.iflow/
-.junie/
-.kilocode/
-.kiro/
-.kode/
-.mcpjam/
-.mux/
-.neovate/
-.openhands/
-.pi/
-.pochi/
-.qoder/
-.qwen/
-.roo/
-.trae/
-.vibe/
-.windsurf/
-.zencoder/
-skills-lock.json
