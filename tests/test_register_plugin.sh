@@ -27,8 +27,15 @@ assert_eq() {
 }
 
 json_get() {
-  # $1 = file, $2 = python expression on `d`
-  python3 -c "import json,sys; d=json.load(open('$1')); print($2)"
+  # $1 = file, $2 = JS expression on `d` (the parsed JSON). Booleans are
+  # printed as `True`/`False` so assertions stay portable across the older
+  # Python-style harness and the current Node-only one.
+  node -e "
+    const d = JSON.parse(require('fs').readFileSync('$1', 'utf8'));
+    const v = ($2);
+    process.stdout.write(typeof v === 'boolean' ? (v ? 'True' : 'False') : String(v));
+    process.stdout.write('\n');
+  "
 }
 
 echo "=== Test: register-plugin.js ==="
@@ -42,7 +49,7 @@ node "$REGISTER" --scope project --vault "$VAULT1"
 assert_eq "settings.json exists"            "yes" "$([ -f "$VAULT1/.claude/settings.json" ] && echo yes || echo no)"
 assert_eq "enabledPlugins flag is true"     "True" "$(json_get "$VAULT1/.claude/settings.json" "d['enabledPlugins']['second-brain@second-brain']")"
 assert_eq "source type is directory"        "directory" "$(json_get "$VAULT1/.claude/settings.json" "d['extraKnownMarketplaces']['second-brain']['source']['source']")"
-assert_eq "path is absolute"                "True" "$(json_get "$VAULT1/.claude/settings.json" "str(d['extraKnownMarketplaces']['second-brain']['source']['path'].startswith('/'))")"
+assert_eq "path is absolute"                "True" "$(json_get "$VAULT1/.claude/settings.json" "d['extraKnownMarketplaces']['second-brain']['source']['path'].startsWith('/')")"
 
 # Test 2: Merge — preserves unrelated keys.
 echo ""
@@ -56,7 +63,7 @@ cat > "$VAULT2/.claude/settings.json" <<EOF
 }
 EOF
 node "$REGISTER" --scope project --vault "$VAULT2"
-assert_eq "unrelated permissions preserved"   "True" "$(json_get "$VAULT2/.claude/settings.json" "d['permissions']['allow'] == ['Bash(ls:*)']")"
+assert_eq "unrelated permissions preserved"   "True" "$(json_get "$VAULT2/.claude/settings.json" "JSON.stringify(d['permissions']['allow']) === JSON.stringify(['Bash(ls:*)'])")"
 assert_eq "other-plugin still enabled"        "True" "$(json_get "$VAULT2/.claude/settings.json" "d['enabledPlugins']['other-plugin@other-mkt']")"
 assert_eq "second-brain plugin added"         "True" "$(json_get "$VAULT2/.claude/settings.json" "d['enabledPlugins']['second-brain@second-brain']")"
 
