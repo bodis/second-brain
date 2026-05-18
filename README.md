@@ -23,7 +23,7 @@ Two install modes — pick whichever fits.
 
 ```bash
 # 1. From inside the directory that will become your vault:
-git clone https://github.com/bodist/second-brain.git .claude/plugins/second-brain
+git clone https://github.com/bodis/second-brain.git .claude/plugins/second-brain
 
 # 2. One-time bootstrap to launch the wizard:
 claude --plugin-dir .claude/plugins/second-brain
@@ -39,7 +39,7 @@ cd <vault> && claude
 
 ```bash
 # 1. Clone once to your home dir:
-git clone https://github.com/bodist/second-brain.git ~/.claude/plugins/second-brain
+git clone https://github.com/bodis/second-brain.git ~/.claude/plugins/second-brain
 
 # 2. Merge the snippet from docs/install/user-home-settings.json into
 #    ~/.claude/settings.json (adjust the "path" field to your absolute path).
