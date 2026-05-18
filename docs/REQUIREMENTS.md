@@ -1,6 +1,6 @@
 # Second Brain — Blueprint
 
-> This is the genesis document for this project. It describes the pattern, the requirements, and how we implemented it. You can use this as a blueprint to build your own version from scratch, or just install our implementation via `npx skills add` (see README.md).
+> This is the genesis document for this project. It describes the pattern, the requirements, and how we implemented it. You can use this as a blueprint to build your own version from scratch, or just install our implementation as a Claude Code plugin (see README.md).
 
 ## ORIGIN
 
@@ -65,16 +65,13 @@ The agent config is the brain of the system. It tells the LLM exactly how to beh
 - **Operations** — step-by-step workflows for ingest, query, and lint
 - **Rules** — 10 rules governing the LLM's behavior (never modify raw, always update index, etc.)
 
-You can write this by hand (see `llm-wiki.md` for the conceptual foundation) or let our onboarding wizard generate it. The canonical rules live in `skills/second-brain/references/wiki-schema.md`.
+You can write this by hand (see `llm-wiki.md` for the conceptual foundation) or let our onboarding wizard generate it. The canonical rules live in `skills/onboard/references/wiki-schema.md`.
 
 ---
 
 ## MULTI-AGENT SUPPORT
 
-The wiki pattern is agent-agnostic — it's just markdown files and conventions. The same rules work in any agent config file. This means you can:
-- Set up a vault with Claude Code, then also use it from Cursor
-- Switch agents without rebuilding the vault
-- Have multiple agents work on the same vault (they follow the same rules)
+The wiki pattern itself is agent-agnostic — it's just markdown files and conventions, and the same rules work in any agent config file. This fork, however, ships as a Claude Code plugin and removes the Codex / Cursor / Gemini config templates that the upstream project carried. If you want to drive the same vault with a different agent, the wiki schema in `skills/onboard/references/wiki-schema.md` is reusable; you'd hand-author the equivalent `AGENTS.md` / `.cursor/rules` / `GEMINI.md` from it.
 
 ---
 
