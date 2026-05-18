@@ -4,7 +4,7 @@ description: >
   Set up a new Obsidian knowledge base with the LLM Wiki pattern. Use when
   the user wants to create a second brain, initialize a vault, set up a
   personal knowledge base, or says "onboard". Guides through an interactive
-  wizard to configure vault name, location, domain, agent support, and tooling.
+  wizard to configure vault name, location, domain, and tooling.
 allowed-tools: Bash Read Write Glob Grep
 ---
 
@@ -88,7 +88,7 @@ Append the setup entry:
 ```
 ## [YYYY-MM-DD] setup | Vault initialized
 Created vault "{{VAULT_NAME}}" for {{DOMAIN_DESCRIPTION}}.
-Agent configs: {{list of generated config files}}.
+Agent config: CLAUDE.md.
 ```
 
 ### 4. Install CLI tools (if selected)
