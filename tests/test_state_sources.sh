@@ -97,6 +97,18 @@ assert_eq "first new path is one"   "raw/one.md" "$(echo "$OUT" | node -e "let d
 assert_eq "first new kind is generic" "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].kind))")"
 assert_eq "sha256 is 64 hex chars"  "64" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new[0].sha256.length)))")"
 
+
+# Test 5: diff excludes raw/assets/ by default.
+echo ""
+echo "Test 5: diff honors excludes"
+V5=$(make_vault vault5)
+echo "article" > "$V5/raw/one.md"
+mkdir -p "$V5/raw/assets"
+echo "img bytes" > "$V5/raw/assets/cover.png"
+OUT=$( (cd "$V5" && node "$SCRIPT" diff) )
+assert_eq "only one file counted as new" "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "the new file is one.md"       "raw/one.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
