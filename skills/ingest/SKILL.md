@@ -52,9 +52,9 @@ Determine which files need ingestion:
    ```
 
    Parse the JSON output. It has three lists:
-   - `new`: sources never ingested. Path + content hash.
-   - `changed`: sources whose content hash differs from last ingest. Includes `previous_sha256` and `previous_wiki_pages` (the wiki pages this source previously produced, so you can update them in place).
-   - `deleted`: sources that were in state but are no longer on disk. Includes `previous_wiki_pages`.
+   - `new`: sources never ingested. Path + content hash + `kind` (and `system` if structured).
+   - `changed`: sources whose content hash differs from last ingest. Includes `kind`, `system` (if structured), `previous_sha256`, and `previous_wiki_pages` (the wiki pages this source previously produced, so you can update them in place).
+   - `deleted`: sources that were in state but are no longer on disk. Includes `kind`, `system` (if structured), and `previous_wiki_pages`.
 
 4. For `deleted` entries, surface them to the user with their `previous_wiki_pages` and ask whether to:
    - keep the wiki pages and drop the source from state (`commit --source <path> --deleted`), or
@@ -83,6 +83,8 @@ Read the entire file. If the file contains image references, note them — read 
 Before writing anything, share the 3-5 most important takeaways from the source. Ask the user if they want to emphasize any particular aspects or skip any topics. Wait for confirmation before proceeding.
 
 ### 3. Create source summary page
+
+**Applies to `kind: generic` only.** For `kind: structured`, skip this step — the original `src/documentation/<...>` file is the canonical page.
 
 Create a new file in `wiki/sources/` named after the source (slugified). Include:
 
