@@ -4,7 +4,8 @@
 /**
  * @typedef {Object} Source
  * @property {string} path             POSIX-style vault-relative path.
- * @property {'generic'|'structured'}  kind  Source classification. CR-002 only emits `generic`.
+ * @property {'generic'|'structured'}  kind  Source classification. Generic: under raw/. Structured: under src/documentation/<system>/.
+ * @property {string} [system]         For structured sources only: first path segment under src/documentation/ (e.g. "confluence").
  * @property {string} sha256           Content hash, hex lowercase, 64 chars.
  * @property {number} bytes            File size in bytes.
  * @property {string} mtime            ISO 8601 UTC timestamp ending in `Z`.
@@ -16,6 +17,7 @@
  * @typedef {Object} DiffEntry
  * @property {string} path
  * @property {'generic'|'structured'} [kind]
+ * @property {string} [system]                 Set only when kind === 'structured'.
  * @property {string} [sha256]
  * @property {number} [bytes]
  * @property {string} [mtime]
@@ -111,37 +113,75 @@ function isExcluded(relPath, excludes) {
 }
 
 function walkSources(vault, excludes) {
-  const rawDir = path.join(vault, 'raw');
-  if (!fs.existsSync(rawDir)) return [];
   const out = [];
-  function recurse(dir) {
+
+  function pushFile(abs, rel, kind, system) {
+    let stat;
+    try { stat = fs.statSync(abs); }
+    catch (err) {
+      process.stderr.write(`info: skipping ${rel}: ${err.message}\n`);
+      return;
+    }
+    if (!stat.isFile()) return;
+    const entry = {
+      path: rel,
+      kind,
+      sha256: sha256File(abs),
+      bytes: stat.size,
+      mtime: utcStamp(stat.mtimeMs),
+    };
+    if (system) entry.system = system;
+    out.push(entry);
+  }
+
+  function recurseGeneric(dir) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       if (e.name.startsWith('.')) continue;
       const abs = path.join(dir, e.name);
       const rel = path.relative(vault, abs).split(path.sep).join('/');
       if (e.isDirectory()) {
         if (isExcluded(rel + '/', excludes)) continue;
-        recurse(abs);
+        recurseGeneric(abs);
         continue;
       }
       if (isExcluded(rel, excludes)) continue;
-      let stat;
-      try { stat = fs.statSync(abs); }
-      catch (err) {
-        process.stderr.write(`info: skipping ${rel}: ${err.message}\n`);
-        continue;
-      }
-      if (!stat.isFile()) continue;
-      out.push({
-        path: rel,
-        kind: 'generic',
-        sha256: sha256File(abs),
-        bytes: stat.size,
-        mtime: utcStamp(stat.mtimeMs),
-      });
+      pushFile(abs, rel, 'generic', null);
     }
   }
-  recurse(rawDir);
+
+  function recurseStructured(dir, system) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name.startsWith('.')) continue;
+      const abs = path.join(dir, e.name);
+      const rel = path.relative(vault, abs).split(path.sep).join('/');
+      if (e.isDirectory()) {
+        if (isExcluded(rel + '/', excludes)) continue;
+        recurseStructured(abs, system);
+        continue;
+      }
+      if (isExcluded(rel, excludes)) continue;
+      pushFile(abs, rel, 'structured', system);
+    }
+  }
+
+  const rawDir = path.join(vault, 'raw');
+  if (fs.existsSync(rawDir)) recurseGeneric(rawDir);
+
+  const docDir = path.join(vault, 'src/documentation');
+  if (fs.existsSync(docDir)) {
+    for (const e of fs.readdirSync(docDir, { withFileTypes: true })) {
+      if (e.name.startsWith('.')) continue;
+      const abs = path.join(docDir, e.name);
+      const rel = path.relative(vault, abs).split(path.sep).join('/');
+      if (!e.isDirectory()) {
+        process.stderr.write(`info: skipping ${rel}: no <system>/ subdirectory\n`);
+        continue;
+      }
+      if (isExcluded(rel + '/', excludes)) continue;
+      recurseStructured(abs, e.name);
+    }
+  }
+
   return out;
 }
 
@@ -188,9 +228,11 @@ function cmdDiff(vault) {
   for (const f of fsFiles) {
     const y = yamlByPath.get(f.path);
     if (!y) {
-      newList.push({ path: f.path, kind: f.kind, sha256: f.sha256, bytes: f.bytes, mtime: f.mtime });
+      const entry = { path: f.path, kind: f.kind, sha256: f.sha256, bytes: f.bytes, mtime: f.mtime };
+      if (f.system) entry.system = f.system;
+      newList.push(entry);
     } else if (y.sha256 !== f.sha256) {
-      changedList.push({
+      const entry = {
         path: f.path,
         kind: y.kind || 'generic',
         sha256: f.sha256,
@@ -198,7 +240,9 @@ function cmdDiff(vault) {
         mtime: f.mtime,
         previous_sha256: y.sha256,
         previous_wiki_pages: Array.isArray(y.wiki_pages) ? y.wiki_pages : [],
-      });
+      };
+      if (f.system) entry.system = f.system;
+      changedList.push(entry);
     }
   }
 

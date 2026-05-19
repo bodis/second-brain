@@ -280,6 +280,68 @@ assert_eq "two diff runs produce identical output" "$H1" "$H2"
 FIRST=$(echo "$OUT1" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new.map(s=>s.path).join(',')))")
 assert_eq "new entries sorted by path" "raw/a.md,raw/b.md,raw/c.md" "$FIRST"
 
+# Test 12: walker finds a file under src/documentation/<system>/ and tags it
+# with kind=structured, system=<system>.
+echo ""
+echo "Test 12: walker discovers structured docs"
+V12=$(make_vault vault12)
+mkdir -p "$V12/src/documentation/confluence/api"
+echo "auth doc" > "$V12/src/documentation/confluence/api/auth.md"
+OUT=$( (cd "$V12" && node "$SCRIPT" diff) )
+assert_eq "new count is 1"                "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "new path is full structured"   "src/documentation/confluence/api/auth.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+assert_eq "new kind is structured"        "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].kind))")"
+assert_eq "new system is confluence"      "confluence" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].system))")"
+
+# Test 13: nested structured paths get the first segment under documentation/
+# as their system, not a deeper segment.
+echo ""
+echo "Test 13: walker handles deeply nested structured paths"
+V13=$(make_vault vault13)
+mkdir -p "$V13/src/documentation/confluence/space/team"
+echo "page" > "$V13/src/documentation/confluence/space/team/page.md"
+OUT=$( (cd "$V13" && node "$SCRIPT" diff) )
+assert_eq "deep new system is confluence"  "confluence" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].system))")"
+assert_eq "deep new path preserved"        "src/documentation/confluence/space/team/page.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+
+# Test 14: walker finds both raw/ and src/documentation/ files, each tagged
+# correctly. `new` is sorted by path so raw/ comes after src/.
+echo ""
+echo "Test 14: walker mixes raw and structured"
+V14=$(make_vault vault14)
+mkdir -p "$V14/src/documentation/conf"
+echo "raw" > "$V14/raw/x.md"
+echo "structured" > "$V14/src/documentation/conf/y.md"
+OUT=$( (cd "$V14" && node "$SCRIPT" diff) )
+assert_eq "two new entries"               "2" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "raw entry kind is generic"      "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='raw/x.md'); process.stdout.write(e.kind)})")"
+assert_eq "raw entry has no system"        "undefined" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='raw/x.md'); process.stdout.write(String(e.system))})")"
+assert_eq "structured entry kind"          "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='src/documentation/conf/y.md'); process.stdout.write(e.kind)})")"
+assert_eq "structured entry system"        "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='src/documentation/conf/y.md'); process.stdout.write(e.system)})")"
+
+# Test 15: a file directly under src/documentation/ (no <system>/ parent) is
+# skipped and produces an info-level stderr log.
+echo ""
+echo "Test 15: walker skips loose files directly under src/documentation/"
+V15=$(make_vault vault15)
+mkdir -p "$V15/src/documentation"
+echo "lonely" > "$V15/src/documentation/loose.md"
+OUT=$( (cd "$V15" && node "$SCRIPT" diff 2>/tmp/cr3_t15_stderr) )
+ERR=$(cat /tmp/cr3_t15_stderr); rm -f /tmp/cr3_t15_stderr
+assert_eq "loose file not in new"          "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "stderr names the loose file"    "True" "$(echo "$ERR" | grep -q 'src/documentation/loose.md' && echo True || echo False)"
+assert_eq "stderr explains why"            "True" "$(echo "$ERR" | grep -q 'no <system>/ subdirectory' && echo True || echo False)"
+
+# Test 16: anything under src/ that is NOT documentation/ is invisible to the
+# walker. (Per CR-003 non-goals — only src/documentation/ is recognized.)
+echo ""
+echo "Test 16: walker ignores non-documentation src/ content"
+V16=$(make_vault vault16)
+mkdir -p "$V16/src/notes"
+echo "note" > "$V16/src/notes/foo.md"
+OUT=$( (cd "$V16" && node "$SCRIPT" diff) )
+assert_eq "src/notes/ file not in new"     "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
