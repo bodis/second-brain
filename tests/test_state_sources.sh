@@ -60,6 +60,28 @@ AFTER=$(commit_count "$V1")
 assert_eq "begin reports clean baseline" "clean baseline" "$OUT"
 assert_eq "no new commit created"        "$BEFORE" "$AFTER"
 
+# Test 2: begin on dirty tree → makes pre-run baseline commit.
+echo ""
+echo "Test 2: begin with uncommitted wiki changes"
+V2=$(make_vault vault2)
+mkdir -p "$V2/wiki"
+echo "hand edit" > "$V2/wiki/scratch.md"
+(cd "$V2" && git add wiki/scratch.md)  # staged but not committed
+BEFORE=$(commit_count "$V2")
+OUT=$( (cd "$V2" && node "$SCRIPT" begin) )
+AFTER=$(commit_count "$V2")
+assert_eq "baseline commit created" "$((BEFORE + 1))" "$AFTER"
+assert_eq "commit message matches"  "ingest: pre-run baseline" "$(last_msg "$V2")"
+assert_eq "output names file count" "committed pre-run baseline (1 files)" "$OUT"
+
+# Test 3: begin is idempotent (second run on now-clean tree).
+echo ""
+echo "Test 3: begin idempotent on now-clean tree"
+OUT=$( (cd "$V2" && node "$SCRIPT" begin) )
+AFTER2=$(commit_count "$V2")
+assert_eq "no new commit on second run" "$AFTER" "$AFTER2"
+assert_eq "reports clean baseline"      "clean baseline" "$OUT"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
