@@ -107,6 +107,8 @@ bash <skill-directory>/scripts/onboarding.sh <vault-path>
 
 This creates all directories and the initial `wiki/index.md` and `wiki/log.md` files.
 
+The vault gets two source roots: `raw/` for one-off clipped articles (generic sources) and `src/documentation/` for authoritative tree-shaped docs (structured sources, e.g. confluence or github-wiki exports). Both are scaffolded empty; the user (or an external scraper like `doc-downloader`) drops files in later under `src/documentation/<system>/...`.
+
 ### 4. Generate the agent config file
 
 Read the template at `<skill-directory>/references/agent-configs/claude-code.md` and write the generated config to `<vault>/CLAUDE.md`.
@@ -160,7 +162,11 @@ Show the user:
 2. **Required next step** — install the Obsidian Web Clipper browser extension:
    > Install the Obsidian Web Clipper to easily save web articles into your vault:
    > https://chromewebstore.google.com/detail/obsidian-web-clipper/cnjifjpddelmedmihgijeibhnjfabmlf
-3. **How to start** — open the vault folder in Obsidian, clip an article to `raw/`, then run `/second-brain:ingest`
+3. **How to start** — open the vault folder in Obsidian, then either:
+   - Clip an article to `raw/` (generic one-off sources), or
+   - Drop a tree of `.md` files under `src/documentation/<system>/...` (structured docs from confluence, github-wiki, etc.)
+
+   Then run `/second-brain:ingest`.
 
 ## Reference Files
 

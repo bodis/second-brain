@@ -280,6 +280,159 @@ assert_eq "two diff runs produce identical output" "$H1" "$H2"
 FIRST=$(echo "$OUT1" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new.map(s=>s.path).join(',')))")
 assert_eq "new entries sorted by path" "raw/a.md,raw/b.md,raw/c.md" "$FIRST"
 
+# Test 12: walker finds a file under src/documentation/<system>/ and tags it
+# with kind=structured, system=<system>.
+echo ""
+echo "Test 12: walker discovers structured docs"
+V12=$(make_vault vault12)
+mkdir -p "$V12/src/documentation/confluence/api"
+echo "auth doc" > "$V12/src/documentation/confluence/api/auth.md"
+OUT=$( (cd "$V12" && node "$SCRIPT" diff) )
+assert_eq "new count is 1"                "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "new path is full structured"   "src/documentation/confluence/api/auth.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+assert_eq "new kind is structured"        "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].kind))")"
+assert_eq "new system is confluence"      "confluence" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].system))")"
+
+# Test 13: nested structured paths get the first segment under documentation/
+# as their system, not a deeper segment.
+echo ""
+echo "Test 13: walker handles deeply nested structured paths"
+V13=$(make_vault vault13)
+mkdir -p "$V13/src/documentation/confluence/space/team"
+echo "page" > "$V13/src/documentation/confluence/space/team/page.md"
+OUT=$( (cd "$V13" && node "$SCRIPT" diff) )
+assert_eq "deep new system is confluence"  "confluence" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].system))")"
+assert_eq "deep new path preserved"        "src/documentation/confluence/space/team/page.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+
+# Test 14: walker finds both raw/ and src/documentation/ files, each tagged
+# correctly. `new` is sorted by path so raw/ comes after src/.
+echo ""
+echo "Test 14: walker mixes raw and structured"
+V14=$(make_vault vault14)
+mkdir -p "$V14/src/documentation/conf"
+echo "raw" > "$V14/raw/x.md"
+echo "structured" > "$V14/src/documentation/conf/y.md"
+OUT=$( (cd "$V14" && node "$SCRIPT" diff) )
+assert_eq "two new entries"               "2" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "raw entry kind is generic"      "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='raw/x.md'); process.stdout.write(e.kind)})")"
+assert_eq "raw entry has no system"        "undefined" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='raw/x.md'); process.stdout.write(String(e.system))})")"
+assert_eq "structured entry kind"          "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='src/documentation/conf/y.md'); process.stdout.write(e.kind)})")"
+assert_eq "structured entry system"        "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).new.find(n=>n.path==='src/documentation/conf/y.md'); process.stdout.write(e.system)})")"
+
+# Test 15: a file directly under src/documentation/ (no <system>/ parent) is
+# skipped and produces an info-level stderr log.
+echo ""
+echo "Test 15: walker skips loose files directly under src/documentation/"
+V15=$(make_vault vault15)
+mkdir -p "$V15/src/documentation"
+echo "lonely" > "$V15/src/documentation/loose.md"
+OUT=$( (cd "$V15" && node "$SCRIPT" diff 2>/tmp/cr3_t15_stderr) )
+ERR=$(cat /tmp/cr3_t15_stderr); rm -f /tmp/cr3_t15_stderr
+assert_eq "loose file not in new"          "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "stderr names the loose file"    "True" "$(echo "$ERR" | grep -q 'src/documentation/loose.md' && echo True || echo False)"
+assert_eq "stderr explains why"            "True" "$(echo "$ERR" | grep -q 'no <system>/ subdirectory' && echo True || echo False)"
+
+# Test 16: anything under src/ that is NOT documentation/ is invisible to the
+# walker. (Per CR-003 non-goals — only src/documentation/ is recognized.)
+echo ""
+echo "Test 16: walker ignores non-documentation src/ content"
+V16=$(make_vault vault16)
+mkdir -p "$V16/src/notes"
+echo "note" > "$V16/src/notes/foo.md"
+OUT=$( (cd "$V16" && node "$SCRIPT" diff) )
+assert_eq "src/notes/ file not in new"     "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+
+# Test 17: commit on a file under src/documentation/<system>/ records the
+# entry with kind=structured and system=<first segment>.
+echo ""
+echo "Test 17: commit on a structured source records kind + system"
+V17=$(make_vault vault17)
+mkdir -p "$V17/src/documentation/conf/api" "$V17/wiki/entities"
+echo "auth doc" > "$V17/src/documentation/conf/api/auth.md"
+echo "oauth entity" > "$V17/wiki/entities/oauth.md"
+(cd "$V17" && node "$SCRIPT" commit --source src/documentation/conf/api/auth.md >/dev/null)
+YAML="$V17/wiki/.state/sources.yaml"
+assert_eq "one source recorded"        "1"                                          "$(get_yaml "$YAML" "d.sources.length")"
+assert_eq "structured source path"     "src/documentation/conf/api/auth.md"         "$(get_yaml "$YAML" "d.sources[0].path")"
+assert_eq "structured kind recorded"   "structured"                                 "$(get_yaml "$YAML" "d.sources[0].kind")"
+assert_eq "structured system recorded" "conf"                                       "$(get_yaml "$YAML" "d.sources[0].system")"
+assert_eq "wiki_pages auto-detected"   "wiki/entities/oauth.md"                     "$(get_yaml "$YAML" "d.sources[0].wiki_pages[0]")"
+
+# Test 18: commit refuses a source path that is not under raw/ or
+# src/documentation/. Exits 1 and does NOT write state.
+echo ""
+echo "Test 18: commit rejects paths outside raw/ and src/documentation/"
+V18=$(make_vault vault18)
+mkdir -p "$V18/notes" "$V18/wiki/entities"
+echo "stray" > "$V18/notes/foo.md"
+echo "out" > "$V18/wiki/entities/bar.md"
+set +e
+ERR=$( (cd "$V18" && node "$SCRIPT" commit --source notes/foo.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 1 on foreign path"  "1" "$RC"
+assert_eq "stderr names the problem"     "True" "$(echo "$ERR" | grep -q 'not under raw/ or src/documentation/' && echo True || echo False)"
+assert_eq "no sources.yaml written"      "no" "$([ -f "$V18/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
+# Test 19: commit refuses a path under src/documentation/ that lacks a
+# <system>/ subdirectory. Distinct die branch from Test 18 — different
+# stderr message, same exit code 1, same no-state guarantee.
+echo ""
+echo "Test 19: commit rejects src/documentation/ paths without a system subdir"
+V19a=$(make_vault vault19a)
+mkdir -p "$V19a/src/documentation" "$V19a/wiki/entities"
+echo "stray" > "$V19a/src/documentation/loose.md"
+echo "out" > "$V19a/wiki/entities/foo.md"
+set +e
+ERR=$( (cd "$V19a" && node "$SCRIPT" commit --source src/documentation/loose.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 1 on missing system" "1" "$RC"
+assert_eq "stderr names the missing system" "True" "$(echo "$ERR" | grep -q 'missing a <system>/ subdirectory' && echo True || echo False)"
+assert_eq "no sources.yaml written"        "no" "$([ -f "$V19a/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
+# Test 20: a structured source whose content changes after a previous commit
+# surfaces in diff.changed with kind, system, previous_sha256, and
+# previous_wiki_pages.
+echo ""
+echo "Test 20: changed structured entry carries kind + system + previous state"
+V20=$(make_vault vault20)
+mkdir -p "$V20/src/documentation/conf/api" "$V20/wiki/concepts"
+echo "v1 auth doc" > "$V20/src/documentation/conf/api/auth.md"
+echo "concept v1"  > "$V20/wiki/concepts/api-auth.md"
+(cd "$V20" && node "$SCRIPT" commit --source src/documentation/conf/api/auth.md >/dev/null)
+# Modify the structured doc.
+echo "v2 auth doc with more content" > "$V20/src/documentation/conf/api/auth.md"
+OUT=$( (cd "$V20" && node "$SCRIPT" diff) )
+assert_eq "changed count is 1"             "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changed.length)))")"
+assert_eq "changed kind is structured"     "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].kind))")"
+assert_eq "changed system is conf"         "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].system))")"
+assert_eq "changed previous_sha256 present" "True" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(typeof JSON.parse(d).changed[0].previous_sha256 === 'string' ? 'True' : 'False'))")"
+assert_eq "changed prev wiki page"         "wiki/concepts/api-auth.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].previous_wiki_pages[0]))")"
+
+# Test 21: deleting a previously-ingested structured source surfaces it as
+# deleted with kind, system, and previous_wiki_pages from the old yaml entry.
+# Also: a deleted generic source now carries kind=generic (uniformity).
+echo ""
+echo "Test 21: deleted entries carry kind + system from prior yaml"
+V21=$(make_vault vault21)
+mkdir -p "$V21/raw" "$V21/src/documentation/conf/api" "$V21/wiki/sources" "$V21/wiki/entities"
+echo "gen body" > "$V21/raw/gen.md"
+echo "gen summary" > "$V21/wiki/sources/gen.md"
+(cd "$V21" && node "$SCRIPT" commit --source raw/gen.md >/dev/null)
+echo "str body" > "$V21/src/documentation/conf/api/old.md"
+echo "str entity" > "$V21/wiki/entities/old-api.md"
+(cd "$V21" && node "$SCRIPT" commit --source src/documentation/conf/api/old.md >/dev/null)
+# Delete both on disk.
+rm "$V21/raw/gen.md" "$V21/src/documentation/conf/api/old.md"
+OUT=$( (cd "$V21" && node "$SCRIPT" diff) )
+assert_eq "deleted count is 2"                "2" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+assert_eq "generic delete carries kind"        "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='raw/gen.md'); process.stdout.write(e.kind)})")"
+assert_eq "generic delete has no system"       "undefined" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='raw/gen.md'); process.stdout.write(String(e.system))})")"
+assert_eq "structured delete kind"             "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.kind)})")"
+assert_eq "structured delete system"           "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.system)})")"
+assert_eq "structured delete prev wiki page"   "wiki/entities/old-api.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.previous_wiki_pages[0])})")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

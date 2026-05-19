@@ -22,6 +22,15 @@ The tool resolves the vault root by walking up to the nearest `.git/`. Invoke it
 node "$CLAUDE_PLUGIN_ROOT/skills/ingest/scripts/state-sources.js" <subcommand> [args]
 ```
 
+## Source types
+
+The state tool reports two source kinds in its `diff` output:
+
+- **`kind: generic`** — files under `raw/`. One-off articles, transcripts, notes. **Treatment:** produce a `wiki/sources/<name>.md` summary page AND extract entities/concepts.
+- **`kind: structured`** — files under `src/documentation/<system>/...`. Authoritative exported docs (e.g. confluence, github-wiki, internal-docs). The author already structured the content. **Treatment:** light-touch — DO NOT produce a `wiki/sources/<...>.md` summary page. The original IS the canonical source. Extract entities/concepts mentioned in it and cite back to the original path.
+
+Structured-source entries in `diff` output also carry a `system` field (the first segment under `src/documentation/`, e.g. `confluence`). Use it to disambiguate when prompting the user about deletions or large changes.
+
 ## Identify Sources to Process
 
 Determine which files need ingestion:
@@ -43,9 +52,9 @@ Determine which files need ingestion:
    ```
 
    Parse the JSON output. It has three lists:
-   - `new`: sources never ingested. Path + content hash.
-   - `changed`: sources whose content hash differs from last ingest. Includes `previous_sha256` and `previous_wiki_pages` (the wiki pages this source previously produced, so you can update them in place).
-   - `deleted`: sources that were in state but are no longer on disk. Includes `previous_wiki_pages`.
+   - `new`: sources never ingested. Path + content hash + `kind` (and `system` if structured).
+   - `changed`: sources whose content hash differs from last ingest. Includes `kind`, `system` (if structured), `previous_sha256`, and `previous_wiki_pages` (the wiki pages this source previously produced, so you can update them in place).
+   - `deleted`: sources that were in state but are no longer on disk. Includes `kind`, `system` (if structured), and `previous_wiki_pages`.
 
 4. For `deleted` entries, surface them to the user with their `previous_wiki_pages` and ask whether to:
    - keep the wiki pages and drop the source from state (`commit --source <path> --deleted`), or
@@ -56,7 +65,14 @@ Determine which files need ingestion:
 
 ## Process Each Source
 
-For each entry in `new` and `changed`, follow this workflow. If the entry is `changed`, before step 1 read each path in `previous_wiki_pages` — the goal is to **update** those existing pages, not create new ones.
+For each entry in `new` and `changed`, follow this workflow. The flow branches on `kind`:
+
+- **`generic`**: full workflow — create a `wiki/sources/<name>.md` summary AND entity/concept pages. All nine steps below apply.
+- **`structured`**: light-touch — SKIP step 3 ("Create source summary page"). The original `src/documentation/...` file is the canonical page. Steps 1–2 and 4–9 still apply; every reference to the source uses its full vault-relative path.
+
+If the entry is `changed`, before step 1 read each path in `previous_wiki_pages` — the goal is to **update** those existing pages, not create new ones.
+
+When `diff` lists many `changed` entries with the same `system` (e.g. a bulk re-scrape of 50 confluence pages), still process them one at a time per the steps below. The per-source commits are the audit trail; do not batch.
 
 ### 1. Read the source completely
 
@@ -67,6 +83,8 @@ Read the entire file. If the file contains image references, note them — read 
 Before writing anything, share the 3-5 most important takeaways from the source. Ask the user if they want to emphasize any particular aspects or skip any topics. Wait for confirmation before proceeding.
 
 ### 3. Create source summary page
+
+**Applies to `kind: generic` only.** For `kind: structured`, skip this step — the original `src/documentation/<...>` file is the canonical page.
 
 Create a new file in `wiki/sources/` named after the source (slugified). Include:
 
@@ -121,6 +139,11 @@ For each entity (person, organization, product, tool) and concept (idea, framewo
 - Include YAML frontmatter with tags, sources, created, and updated fields
 - Write a focused summary based on what this source says about the topic
 
+**Citation format:**
+
+- **Generic source** (`kind: generic`): use just the filename in frontmatter, e.g. `sources: [original-filename.md]`. In prose, use `[[Source - Original Title]]`.
+- **Structured source** (`kind: structured`): use the **full vault-relative path** in frontmatter, e.g. `sources: [src/documentation/confluence/api/auth.md]`. This matches the path key in `sources.yaml`. In prose, use a path-form wikilink: `[[src/documentation/confluence/api/auth]]` (Obsidian resolves these).
+
 ### 5. Add wikilinks
 
 Ensure all related pages link to each other using `[[wikilink]]` syntax. Every mention of an entity or concept that has its own page should be linked.
@@ -156,6 +179,8 @@ If the source legitimately produced no wiki output (it turned out to be empty / 
 ```bash
 node "$CLAUDE_PLUGIN_ROOT/skills/ingest/scripts/state-sources.js" commit --source <path> --allow-empty
 ```
+
+Use `--allow-empty` for a structured re-scrape that produced only whitespace or formatting changes — the state advances without polluting the wiki.
 
 If the tool exits with code 6 ("uncommitted non-wiki changes"), it means something outside `wiki/` is dirty (e.g., a user edit to a source file mid-run). Run `state-sources begin` again to roll that into a baseline commit, then retry.
 

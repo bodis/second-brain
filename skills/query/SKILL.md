@@ -32,9 +32,12 @@ This is especially useful when the wiki has grown beyond ~100 pages where scanni
 
 Read the wiki pages identified by the index or search. Follow `[[wikilinks]]` to pull in related context from linked pages. Read enough pages to give a thorough answer, but don't read the entire wiki.
 
-### 4. Check raw sources if needed
+### 4. Check originals for verification or depth
 
-If the wiki pages don't fully answer the question, check relevant source summaries in `wiki/sources/` for additional detail. Only go to files in `raw/` as a last resort.
+If the wiki pages don't fully answer the question, or you need exact wording, go to the originals — but the choice depends on the source kind recorded in `wiki/.state/sources.yaml`:
+
+- **Structured sources** (`src/documentation/<system>/...`, recorded with `kind: structured`): these are authoritative — the author already structured them. Read them directly when you need precise facts or quotes. Cite them by full vault-relative path: `[[src/documentation/confluence/api/auth]]`.
+- **Generic sources** (`raw/...`, recorded with `kind: generic`): prefer the `wiki/sources/<name>.md` summary when the user wants the gist. Only go to the original `raw/` file if the summary lacks detail. Cite either form.
 
 ## Synthesize the Answer
 
@@ -65,7 +68,7 @@ If the user agrees:
 
 ## Conventions
 
-- **Search the wiki first.** Only go to raw sources if the wiki doesn't have the answer.
+- **Search the wiki first.** Order: `wiki/index.md` → wiki pages → originals. For originals, prefer `src/documentation/` for facts (authoritative); fall back to `raw/` only when wiki summaries are insufficient.
 - **Cite your sources.** Every factual claim should link to the wiki page it came from.
 - **Valuable answers compound.** Encourage saving good analyses back into the wiki.
 - Use `[[wikilinks]]` for all internal references. Never use raw file paths.
