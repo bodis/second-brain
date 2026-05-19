@@ -209,6 +209,26 @@ assert_eq "wiki_pages is empty"       "0" "$(get_yaml "$YAML" "d.sources[0].wiki
 OUT=$( (cd "$V8" && node "$SCRIPT" diff) )
 assert_eq "diff no longer sees junk.md as new" "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
 
+
+# Test 9: commit must refuse to run if the working tree has uncommitted changes
+# outside of wiki/. Forces the user to run `begin` first so attribution is clean.
+echo ""
+echo "Test 9: commit fails on uncommitted non-wiki changes"
+V9=$(make_vault vault9)
+mkdir -p "$V9/raw" "$V9/wiki/sources"
+echo "src" > "$V9/raw/x.md"
+echo "out" > "$V9/wiki/sources/x.md"
+# Create an unrelated dirty file outside wiki/.
+echo "drift" > "$V9/raw/handedit.md"
+set +e
+ERR=$( (cd "$V9" && node "$SCRIPT" commit --source raw/x.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 6 on dirty non-wiki tree" "6" "$RC"
+assert_eq "stderr names begin"                  "True" "$(echo "$ERR" | grep -q 'state-sources begin' && echo True || echo False)"
+# State must be untouched.
+assert_eq "no sources.yaml written"             "no" "$([ -f "$V9/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
