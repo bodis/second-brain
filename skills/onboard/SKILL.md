@@ -12,6 +12,16 @@ allowed-tools: Bash Read Write Glob Grep
 
 Set up a new Obsidian knowledge base using the LLM Wiki pattern. The LLM acts as librarian — reading raw sources, compiling them into a structured interlinked wiki, and maintaining it over time.
 
+## Prerequisites
+
+Verify before starting the wizard:
+
+- `git --version` succeeds (required at runtime — the vault is a git repo).
+- `node --version` reports v18 or newer.
+- `npm --version` succeeds (used once during scaffold to install the plugin's runtime dep).
+
+If any check fails, stop and ask the user to install the missing tool.
+
 ## Wizard Flow
 
 Guide the user through these 5 steps. Ask ONE question at a time. Each step has a sensible default — the user can accept it or provide their own value.
@@ -67,7 +77,27 @@ Ask:
 
 After collecting all answers, execute these steps in order:
 
-### 1. Create directory structure
+### 1. Initialize git in the vault
+
+If the vault directory is not already a git repo, run:
+
+```bash
+(cd "$VAULT_PATH" && git init -q)
+```
+
+The vault must be a git repo because the state tooling (`state-sources`) uses git to detect ingest changes. If `git init` fails, stop and report the error.
+
+### 2. Install the plugin's runtime dependency
+
+The plugin needs `js-yaml` (declared in the plugin's repo-root `package.json`). Resolve `$CLAUDE_PLUGIN_ROOT` and run:
+
+```bash
+(cd "$CLAUDE_PLUGIN_ROOT" && [ -d node_modules/js-yaml ] || npm install --omit=dev)
+```
+
+This is a one-time bootstrap. If it fails because npm is missing, fall back to telling the user how to install manually: `cd <plugin-root> && npm install --omit=dev`.
+
+### 3. Create directory structure
 
 Run the onboarding script, passing the full vault path:
 
@@ -77,7 +107,7 @@ bash <skill-directory>/scripts/onboarding.sh <vault-path>
 
 This creates all directories and the initial `wiki/index.md` and `wiki/log.md` files.
 
-### 2. Generate the agent config file
+### 4. Generate the agent config file
 
 Read the template at `<skill-directory>/references/agent-configs/claude-code.md` and write the generated config to `<vault>/CLAUDE.md`.
 
@@ -88,7 +118,7 @@ Replace these placeholders:
 - `{{DOMAIN_TAGS}}` — generate 5–8 domain-relevant tags as a bullet list based on the domain from Step 3
 - `{{WIKI_SCHEMA}}` — read `<skill-directory>/references/wiki-schema.md` and insert everything from `## Architecture` onward
 
-### 3. Register the plugin in settings.json
+### 5. Register the plugin in settings.json
 
 Use the user's answer from Step 4:
 
@@ -102,7 +132,7 @@ Use the user's answer from Step 4:
 
 The script is idempotent — running it again on a future onboarding pass is safe.
 
-### 4. Update wiki/log.md
+### 6. Update wiki/log.md
 
 Append the setup entry:
 
@@ -112,7 +142,7 @@ Created vault "{{VAULT_NAME}}" for {{DOMAIN_DESCRIPTION}}.
 Agent config: CLAUDE.md.
 ```
 
-### 5. Install CLI tools (if selected)
+### 7. Install CLI tools (if selected)
 
 For each tool the user selected in Step 5, run the install command:
 
@@ -122,7 +152,7 @@ For each tool the user selected in Step 5, run the install command:
 
 After each install, verify with `<tool> --version`. Report success or failure for each.
 
-### 6. Print summary
+### 8. Print summary
 
 Show the user:
 
