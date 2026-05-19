@@ -82,6 +82,21 @@ AFTER2=$(commit_count "$V2")
 assert_eq "no new commit on second run" "$AFTER" "$AFTER2"
 assert_eq "reports clean baseline"      "clean baseline" "$OUT"
 
+
+# Test 4: diff with no sources.yaml lists every raw file as new.
+echo ""
+echo "Test 4: diff with no manifest"
+V4=$(make_vault vault4)
+echo "article one" > "$V4/raw/one.md"
+echo "article two" > "$V4/raw/two.md"
+OUT=$( (cd "$V4" && node "$SCRIPT" diff) )
+assert_eq "new count is 2"          "2" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "changed count is 0"      "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changed.length)))")"
+assert_eq "deleted count is 0"      "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+assert_eq "first new path is one"   "raw/one.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
+assert_eq "first new kind is generic" "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].kind))")"
+assert_eq "sha256 is 64 hex chars"  "64" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new[0].sha256.length)))")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
