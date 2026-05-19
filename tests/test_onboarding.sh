@@ -63,6 +63,8 @@ assert_dir "$TEST_VAULT/wiki/entities"
 assert_dir "$TEST_VAULT/wiki/concepts"
 assert_dir "$TEST_VAULT/wiki/synthesis"
 assert_dir "$TEST_VAULT/output"
+assert_dir "$TEST_VAULT/src/documentation"
+assert_file "$TEST_VAULT/src/documentation/.gitkeep"
 
 echo ""
 

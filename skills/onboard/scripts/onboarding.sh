@@ -20,11 +20,18 @@ mkdir -p "$VAULT_ROOT/wiki/concepts"
 mkdir -p "$VAULT_ROOT/wiki/synthesis"
 mkdir -p "$VAULT_ROOT/wiki/.state"
 mkdir -p "$VAULT_ROOT/output"
+mkdir -p "$VAULT_ROOT/src/documentation"
 
 # CR-002: the state directory must exist as a tracked dir from day one so the
 # first ingest's commit doesn't fight with .gitignore semantics on empty dirs.
 if [ ! -f "$VAULT_ROOT/wiki/.state/.gitkeep" ]; then
   : > "$VAULT_ROOT/wiki/.state/.gitkeep"
+fi
+
+# CR-003: src/documentation/ must exist as a tracked-but-empty directory from
+# day one so the first structured ingest doesn't have to create the tree.
+if [ ! -f "$VAULT_ROOT/src/documentation/.gitkeep" ]; then
+  : > "$VAULT_ROOT/src/documentation/.gitkeep"
 fi
 
 # 2. Create wiki/index.md if it doesn't exist
@@ -103,6 +110,7 @@ cat << JSONEOF
   "directories": [
     "raw/",
     "raw/assets/",
+    "src/documentation/",
     "wiki/",
     "wiki/sources/",
     "wiki/entities/",
