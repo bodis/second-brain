@@ -374,6 +374,23 @@ assert_eq "exit code 1 on foreign path"  "1" "$RC"
 assert_eq "stderr names the problem"     "True" "$(echo "$ERR" | grep -q 'not under raw/ or src/documentation/' && echo True || echo False)"
 assert_eq "no sources.yaml written"      "no" "$([ -f "$V18/wiki/.state/sources.yaml" ] && echo yes || echo no)"
 
+# Test 19: commit refuses a path under src/documentation/ that lacks a
+# <system>/ subdirectory. Distinct die branch from Test 18 — different
+# stderr message, same exit code 1, same no-state guarantee.
+echo ""
+echo "Test 19: commit rejects src/documentation/ paths without a system subdir"
+V19a=$(make_vault vault19a)
+mkdir -p "$V19a/src/documentation" "$V19a/wiki/entities"
+echo "stray" > "$V19a/src/documentation/loose.md"
+echo "out" > "$V19a/wiki/entities/foo.md"
+set +e
+ERR=$( (cd "$V19a" && node "$SCRIPT" commit --source src/documentation/loose.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 1 on missing system" "1" "$RC"
+assert_eq "stderr names the missing system" "True" "$(echo "$ERR" | grep -q 'missing a <system>/ subdirectory' && echo True || echo False)"
+assert_eq "no sources.yaml written"        "no" "$([ -f "$V19a/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
