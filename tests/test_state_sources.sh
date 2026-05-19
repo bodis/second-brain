@@ -229,6 +229,39 @@ assert_eq "stderr names begin"                  "True" "$(echo "$ERR" | grep -q 
 # State must be untouched.
 assert_eq "no sources.yaml written"             "no" "$([ -f "$V9/wiki/.state/sources.yaml" ] && echo yes || echo no)"
 
+
+# Test 10: commit --deleted drops the entry from sources.yaml and commits.
+echo ""
+echo "Test 10: commit --deleted"
+V10=$(make_vault vault10)
+mkdir -p "$V10/raw" "$V10/wiki/sources"
+echo "doomed" > "$V10/raw/doomed.md"
+echo "summary" > "$V10/wiki/sources/doomed.md"
+(cd "$V10" && node "$SCRIPT" commit --source raw/doomed.md >/dev/null)
+# Now manually delete the source on disk.
+rm "$V10/raw/doomed.md"
+BEFORE=$(commit_count "$V10")
+OUT=$( (cd "$V10" && node "$SCRIPT" commit --source raw/doomed.md --deleted) )
+AFTER=$(commit_count "$V10")
+assert_eq "one new commit for removal" "$((BEFORE + 1))" "$AFTER"
+assert_eq "removal message matches"    "ingest: remove raw/doomed.md from state" "$(last_msg "$V10")"
+YAML="$V10/wiki/.state/sources.yaml"
+assert_eq "sources list is now empty"  "0" "$(get_yaml "$YAML" "d.sources.length")"
+# Diff must not surface the now-removed source.
+OUT=$( (cd "$V10" && node "$SCRIPT" diff) )
+assert_eq "diff has no deleted entry"  "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+
+# Test 10b: commit on a missing source WITHOUT --deleted → exit 5.
+echo ""
+echo "Test 10b: commit fails (exit 5) when source path does not exist"
+V10b=$(make_vault vault10b)
+set +e
+ERR=$( (cd "$V10b" && node "$SCRIPT" commit --source raw/never-was.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 5 on missing source"  "5" "$RC"
+assert_eq "stderr suggests --deleted flag" "True" "$(echo "$ERR" | grep -q -- '--deleted' && echo True || echo False)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
