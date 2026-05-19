@@ -262,6 +262,24 @@ set -e
 assert_eq "exit code 5 on missing source"  "5" "$RC"
 assert_eq "stderr suggests --deleted flag" "True" "$(echo "$ERR" | grep -q -- '--deleted' && echo True || echo False)"
 
+
+# Test 11: running diff twice on identical state produces byte-identical output.
+echo ""
+echo "Test 11: diff is deterministic"
+V11=$(make_vault vault11)
+mkdir -p "$V11/raw"
+echo "a" > "$V11/raw/a.md"
+echo "b" > "$V11/raw/b.md"
+echo "c" > "$V11/raw/c.md"
+OUT1=$( (cd "$V11" && node "$SCRIPT" diff) )
+OUT2=$( (cd "$V11" && node "$SCRIPT" diff) )
+H1=$(echo "$OUT1" | shasum | cut -d' ' -f1)
+H2=$(echo "$OUT2" | shasum | cut -d' ' -f1)
+assert_eq "two diff runs produce identical output" "$H1" "$H2"
+# And entries are sorted by path.
+FIRST=$(echo "$OUT1" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new.map(s=>s.path).join(',')))")
+assert_eq "new entries sorted by path" "raw/a.md,raw/b.md,raw/c.md" "$FIRST"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
