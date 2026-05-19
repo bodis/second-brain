@@ -109,6 +109,44 @@ OUT=$( (cd "$V5" && node "$SCRIPT" diff) )
 assert_eq "only one file counted as new" "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
 assert_eq "the new file is one.md"       "raw/one.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).new[0].path))")"
 
+
+# Test 6: commit --source happy path. Auto-detects wiki pages from git status.
+echo ""
+echo "Test 6: commit happy path"
+V6=$(make_vault vault6)
+mkdir -p "$V6/raw" "$V6/wiki/sources" "$V6/wiki/entities"
+echo "source body" > "$V6/raw/foo.md"
+# Simulate LLM ingest: produce two wiki pages.
+echo "summary" > "$V6/wiki/sources/foo.md"
+echo "entity"  > "$V6/wiki/entities/bar.md"
+BEFORE=$(commit_count "$V6")
+OUT=$( (cd "$V6" && node "$SCRIPT" commit --source raw/foo.md) )
+AFTER=$(commit_count "$V6")
+assert_eq "one new commit created"     "$((BEFORE + 1))" "$AFTER"
+assert_eq "commit msg names 2 pages"   "ingest: raw/foo.md → 2 pages" "$(last_msg "$V6")"
+assert_eq "sources.yaml exists"        "yes" "$([ -f "$V6/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
+YAML="$V6/wiki/.state/sources.yaml"
+get_yaml() {
+  # $1 = file, $2 = JS expression on `d` (parsed YAML).
+  node -e "
+    const y = require('js-yaml');
+    const d = y.load(require('fs').readFileSync('$1', 'utf8'));
+    const v = ($2);
+    process.stdout.write(typeof v === 'boolean' ? (v ? 'True' : 'False') : String(v));
+  "
+}
+assert_eq "schema_version is 1"        "1" "$(get_yaml "$YAML" "d.schema_version")"
+assert_eq "one source recorded"        "1" "$(get_yaml "$YAML" "d.sources.length")"
+assert_eq "source path"                "raw/foo.md" "$(get_yaml "$YAML" "d.sources[0].path")"
+assert_eq "source kind"                "generic"    "$(get_yaml "$YAML" "d.sources[0].kind")"
+assert_eq "wiki_pages contains 2"      "2"          "$(get_yaml "$YAML" "d.sources[0].wiki_pages.length")"
+assert_eq "wiki_pages sorted"          "wiki/entities/bar.md,wiki/sources/foo.md" "$(get_yaml "$YAML" "d.sources[0].wiki_pages.join(',')")"
+assert_eq "ingested_at present"        "True"       "$(get_yaml "$YAML" "typeof d.sources[0].ingested_at === 'string' && d.sources[0].ingested_at.endsWith('Z')")"
+# Working tree clean after commit:
+LEFTOVER=$( (cd "$V6" && git status --porcelain) )
+assert_eq "working tree clean after commit" "" "$LEFTOVER"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

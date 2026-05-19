@@ -32,7 +32,7 @@ function git(args, vault) {
 }
 
 function gitStatusPorcelain(vault, paths) {
-  const args = ['status', '--porcelain'];
+  const args = ['status', '--porcelain', '-uall'];
   if (paths.length > 0) args.push('--', ...paths);
   return git(args, vault).split('\n').filter(Boolean);
 }
@@ -57,6 +57,14 @@ function readSourcesYaml(vault) {
   if (!Array.isArray(doc.excludes)) doc.excludes = [...DEFAULT_EXCLUDES];
   if (!Array.isArray(doc.sources)) doc.sources = [];
   return doc;
+}
+
+function writeSourcesYaml(vault, doc) {
+  doc.sources.sort((a, b) => a.path.localeCompare(b.path));
+  const stateDir = path.join(vault, 'wiki/.state');
+  fs.mkdirSync(stateDir, { recursive: true });
+  const out = yaml.dump(doc, { indent: 2, sortKeys: false, lineWidth: -1 });
+  fs.writeFileSync(path.join(stateDir, 'sources.yaml'), out);
 }
 
 function sha256File(absPath) {
@@ -106,6 +114,38 @@ function walkSources(vault, excludes) {
   }
   recurse(rawDir);
   return out;
+}
+
+// Parse `git status --porcelain -- wiki/` output. Returns the wiki .md files to
+// record in wiki_pages (added/modified, NOT deleted) and the full list of paths
+// to stage (so deletions are reflected in the commit).
+function parsePorcelainWikiPages(lines) {
+  const wikiPages = new Set();
+  const toStage = new Set();
+  for (const line of lines) {
+    const code = line.slice(0, 2);
+    const rest = line.slice(3);
+    let oldPath = null, newPath = rest;
+    if (code.startsWith('R') || code.startsWith('C')) {
+      const arrow = rest.indexOf(' -> ');
+      if (arrow > -1) {
+        oldPath = rest.slice(0, arrow);
+        newPath = rest.slice(arrow + 4);
+      }
+    }
+    if (oldPath) toStage.add(oldPath);
+    toStage.add(newPath);
+    if (!newPath.endsWith('.md')) continue;
+    // If the file is gone from disk (any 'D' in either status slot — ' D',
+    // 'D ', 'AD', 'MD', etc.), stage the deletion but do not record in
+    // wiki_pages.
+    if (code.includes('D')) continue;
+    wikiPages.add(newPath);
+  }
+  return {
+    wikiPages: [...wikiPages].sort(),
+    toStage: [...toStage].sort(),
+  };
 }
 
 function cmdDiff(vault) {
@@ -160,16 +200,92 @@ function cmdBegin(vault) {
   process.stdout.write(`committed pre-run baseline (${status.length} files)\n`);
 }
 
+function cmdCommit(vault, args) {
+  if (!args.source) die('--source is required', 1);
+
+  if (args.deleted) {
+    const doc = readSourcesYaml(vault);
+    doc.sources = doc.sources.filter(s => s.path !== args.source);
+    writeSourcesYaml(vault, doc);
+    git(['add', '--', 'wiki/.state/sources.yaml'], vault);
+    git(['commit', '-m', `ingest: remove ${args.source} from state`], vault);
+    process.stdout.write(`ingest: remove ${args.source} from state\n`);
+    return;
+  }
+
+  // Exit 6: any uncommitted change outside wiki/ blocks commit, unless it's
+  // the source being ingested (which is typically untracked or modified at
+  // this point — it gets folded into the per-source commit below).
+  const allChanges = gitStatusPorcelain(vault, []);
+  const nonWiki = allChanges.filter(line => {
+    const rest = line.slice(3);
+    const arrow = rest.indexOf(' -> ');
+    const left = arrow > -1 ? rest.slice(0, arrow) : rest;
+    const right = arrow > -1 ? rest.slice(arrow + 4) : rest;
+    if (left.startsWith('wiki/') || right.startsWith('wiki/')) return false;
+    if (left === args.source || right === args.source) return false;
+    return true;
+  });
+  if (nonWiki.length > 0) {
+    die('working tree has uncommitted non-wiki changes; run `state-sources begin` first', 6);
+  }
+
+  const abs = path.join(vault, args.source);
+  if (!fs.existsSync(abs)) {
+    die(`source path does not exist: ${args.source} (use --deleted to remove from state)`, 5);
+  }
+
+  const wikiStatus = gitStatusPorcelain(vault, ['wiki/']);
+  const { wikiPages, toStage } = parsePorcelainWikiPages(wikiStatus);
+
+  if (wikiPages.length === 0 && !args.allowEmpty) {
+    die(`source "${args.source}" produced no wiki changes; re-run with --allow-empty if intentional`, 4);
+  }
+
+  const stat = fs.statSync(abs);
+  const entry = {
+    path: args.source,
+    kind: 'generic',
+    sha256: sha256File(abs),
+    bytes: stat.size,
+    mtime: utcStamp(stat.mtimeMs),
+    ingested_at: utcStamp(Date.now()),
+    wiki_pages: wikiPages,
+  };
+
+  const doc = readSourcesYaml(vault);
+  doc.sources = doc.sources.filter(s => s.path !== args.source);
+  doc.sources.push(entry);
+  writeSourcesYaml(vault, doc);
+
+  const staged = [args.source, 'wiki/.state/sources.yaml', ...toStage];
+  git(['add', '--', ...staged], vault);
+  const msg = wikiPages.length === 0
+    ? `ingest: ${args.source} → no output (allow-empty)`
+    : `ingest: ${args.source} → ${wikiPages.length} pages`;
+  git(['commit', '-m', msg], vault);
+  process.stdout.write(`${msg}\n`);
+}
+
 function parseArgs(argv) {
   const cmd = argv[0];
-  return { cmd };
+  const args = { source: null, allowEmpty: false, deleted: false };
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--source') args.source = argv[++i];
+    else if (a === '--allow-empty') args.allowEmpty = true;
+    else if (a === '--deleted') args.deleted = true;
+    else die(`unknown argument: ${a}`);
+  }
+  return { cmd, args };
 }
 
 function main() {
-  const { cmd } = parseArgs(process.argv.slice(2));
+  const { cmd, args } = parseArgs(process.argv.slice(2));
   const vault = findVaultRoot(process.cwd());
   if (cmd === 'begin') return cmdBegin(vault);
   if (cmd === 'diff') return cmdDiff(vault);
+  if (cmd === 'commit') return cmdCommit(vault, args);
   die(`unknown subcommand: ${cmd}`);
 }
 
