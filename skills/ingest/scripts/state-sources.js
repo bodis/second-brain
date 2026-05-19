@@ -316,15 +316,30 @@ function cmdCommit(vault, args) {
   }
 
   const stat = fs.statSync(abs);
-  const entry = {
-    path: args.source,
-    kind: 'generic',
-    sha256: sha256File(abs),
-    bytes: stat.size,
-    mtime: utcStamp(stat.mtimeMs),
-    ingested_at: utcStamp(Date.now()),
-    wiki_pages: wikiPages,
-  };
+
+  let kind, system;
+  if (args.source.startsWith('raw/')) {
+    kind = 'generic';
+    system = null;
+  } else if (args.source.startsWith('src/documentation/')) {
+    const segs = args.source.split('/');
+    // segs = ['src', 'documentation', '<system>', '<...rest>']
+    if (segs.length < 4 || segs[2] === '') {
+      die(`source path "${args.source}" is under src/documentation/ but missing a <system>/ subdirectory`, 1);
+    }
+    kind = 'structured';
+    system = segs[2];
+  } else {
+    die(`source path "${args.source}" is not under raw/ or src/documentation/`, 1);
+  }
+
+  const entry = { path: args.source, kind };
+  if (system) entry.system = system;
+  entry.sha256 = sha256File(abs);
+  entry.bytes = stat.size;
+  entry.mtime = utcStamp(stat.mtimeMs);
+  entry.ingested_at = utcStamp(Date.now());
+  entry.wiki_pages = wikiPages;
 
   const doc = readSourcesYaml(vault);
   doc.sources = doc.sources.filter(s => s.path !== args.source);

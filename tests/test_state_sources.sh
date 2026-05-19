@@ -342,6 +342,38 @@ echo "note" > "$V16/src/notes/foo.md"
 OUT=$( (cd "$V16" && node "$SCRIPT" diff) )
 assert_eq "src/notes/ file not in new"     "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
 
+# Test 17: commit on a file under src/documentation/<system>/ records the
+# entry with kind=structured and system=<first segment>.
+echo ""
+echo "Test 17: commit on a structured source records kind + system"
+V17=$(make_vault vault17)
+mkdir -p "$V17/src/documentation/conf/api" "$V17/wiki/entities"
+echo "auth doc" > "$V17/src/documentation/conf/api/auth.md"
+echo "oauth entity" > "$V17/wiki/entities/oauth.md"
+(cd "$V17" && node "$SCRIPT" commit --source src/documentation/conf/api/auth.md >/dev/null)
+YAML="$V17/wiki/.state/sources.yaml"
+assert_eq "one source recorded"        "1"                                          "$(get_yaml "$YAML" "d.sources.length")"
+assert_eq "structured source path"     "src/documentation/conf/api/auth.md"         "$(get_yaml "$YAML" "d.sources[0].path")"
+assert_eq "structured kind recorded"   "structured"                                 "$(get_yaml "$YAML" "d.sources[0].kind")"
+assert_eq "structured system recorded" "conf"                                       "$(get_yaml "$YAML" "d.sources[0].system")"
+assert_eq "wiki_pages auto-detected"   "wiki/entities/oauth.md"                     "$(get_yaml "$YAML" "d.sources[0].wiki_pages[0]")"
+
+# Test 18: commit refuses a source path that is not under raw/ or
+# src/documentation/. Exits 1 and does NOT write state.
+echo ""
+echo "Test 18: commit rejects paths outside raw/ and src/documentation/"
+V18=$(make_vault vault18)
+mkdir -p "$V18/notes" "$V18/wiki/entities"
+echo "stray" > "$V18/notes/foo.md"
+echo "out" > "$V18/wiki/entities/bar.md"
+set +e
+ERR=$( (cd "$V18" && node "$SCRIPT" commit --source notes/foo.md) 2>&1 >/dev/null)
+RC=$?
+set -e
+assert_eq "exit code 1 on foreign path"  "1" "$RC"
+assert_eq "stderr names the problem"     "True" "$(echo "$ERR" | grep -q 'not under raw/ or src/documentation/' && echo True || echo False)"
+assert_eq "no sources.yaml written"      "no" "$([ -f "$V18/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
