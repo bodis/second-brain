@@ -14,6 +14,9 @@ Shared decisions for all CRs live in [conventions.md](./conventions.md). Referen
 | [CR-004](./CR-004-hooks-and-scripts.md) | Deterministic hooks + validation scripts framework | CR-002 |
 | [CR-005](./CR-005-reorganize-skill.md) | New `/second-brain:reorganize` skill for wiki self-improvement | CR-004 |
 | [CR-006](./CR-006-multi-vault-deployment.md) | Roll plugin out to yettel + sibling vaults | CR-001..CR-005 |
+| [CR-007](./CR-007-contradiction-detection.md) | Contradiction detection across wiki pages, exposed via `/status reconcile` | CR-002, CR-004, CR-009 |
+| [CR-008](./CR-008-staleness-review.md) | Staleness signals + `/status refresh` flow for wiki rot triage | CR-002, CR-004, CR-005, CR-009 |
+| [CR-009](./CR-009-status-dashboard.md) | Unified `/status` dashboard + review-since-checkpoint log + headless driving | CR-002, CR-004 |
 
 ## Workflow
 
