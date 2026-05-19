@@ -147,6 +147,38 @@ assert_eq "ingested_at present"        "True"       "$(get_yaml "$YAML" "typeof 
 LEFTOVER=$( (cd "$V6" && git status --porcelain) )
 assert_eq "working tree clean after commit" "" "$LEFTOVER"
 
+
+# Test 7: After commit, diff reports nothing new; modifying the source surfaces
+# it as `changed` with previous_sha256 + previous_wiki_pages; deleting it
+# surfaces as `deleted` with previous_wiki_pages.
+echo ""
+echo "Test 7: diff after commit (changed + deleted)"
+V7=$(make_vault vault7)
+mkdir -p "$V7/raw" "$V7/wiki/sources"
+echo "v1" > "$V7/raw/article.md"
+echo "summary v1" > "$V7/wiki/sources/article.md"
+(cd "$V7" && node "$SCRIPT" commit --source raw/article.md >/dev/null)
+
+# (a) Nothing pending.
+OUT=$( (cd "$V7" && node "$SCRIPT" diff) )
+assert_eq "after commit, no new"     "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+assert_eq "after commit, no changed" "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changed.length)))")"
+assert_eq "after commit, no deleted" "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+
+# (b) Modify the source. It must surface as changed and carry previous state.
+echo "v2 - more content" > "$V7/raw/article.md"
+OUT=$( (cd "$V7" && node "$SCRIPT" diff) )
+assert_eq "changed count is 1"                "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changed.length)))")"
+assert_eq "changed has previous_sha256"       "True" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(typeof JSON.parse(d).changed[0].previous_sha256 === 'string' ? 'True' : 'False'))")"
+assert_eq "changed lists prev wiki page"      "wiki/sources/article.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].previous_wiki_pages[0]))")"
+assert_eq "changed sha differs from previous" "True" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const c=JSON.parse(d).changed[0]; process.stdout.write(c.sha256 !== c.previous_sha256 ? 'True' : 'False')})")"
+
+# (c) Delete the source. It must surface as deleted and carry previous_wiki_pages.
+rm "$V7/raw/article.md"
+OUT=$( (cd "$V7" && node "$SCRIPT" diff) )
+assert_eq "deleted count is 1"             "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+assert_eq "deleted carries wiki page list" "wiki/sources/article.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).deleted[0].previous_wiki_pages[0]))")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
