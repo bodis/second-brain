@@ -391,6 +391,48 @@ assert_eq "exit code 1 on missing system" "1" "$RC"
 assert_eq "stderr names the missing system" "True" "$(echo "$ERR" | grep -q 'missing a <system>/ subdirectory' && echo True || echo False)"
 assert_eq "no sources.yaml written"        "no" "$([ -f "$V19a/wiki/.state/sources.yaml" ] && echo yes || echo no)"
 
+# Test 20: a structured source whose content changes after a previous commit
+# surfaces in diff.changed with kind, system, previous_sha256, and
+# previous_wiki_pages.
+echo ""
+echo "Test 20: changed structured entry carries kind + system + previous state"
+V20=$(make_vault vault20)
+mkdir -p "$V20/src/documentation/conf/api" "$V20/wiki/concepts"
+echo "v1 auth doc" > "$V20/src/documentation/conf/api/auth.md"
+echo "concept v1"  > "$V20/wiki/concepts/api-auth.md"
+(cd "$V20" && node "$SCRIPT" commit --source src/documentation/conf/api/auth.md >/dev/null)
+# Modify the structured doc.
+echo "v2 auth doc with more content" > "$V20/src/documentation/conf/api/auth.md"
+OUT=$( (cd "$V20" && node "$SCRIPT" diff) )
+assert_eq "changed count is 1"             "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changed.length)))")"
+assert_eq "changed kind is structured"     "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].kind))")"
+assert_eq "changed system is conf"         "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].system))")"
+assert_eq "changed previous_sha256 present" "True" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(typeof JSON.parse(d).changed[0].previous_sha256 === 'string' ? 'True' : 'False'))")"
+assert_eq "changed prev wiki page"         "wiki/concepts/api-auth.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).changed[0].previous_wiki_pages[0]))")"
+
+# Test 21: deleting a previously-ingested structured source surfaces it as
+# deleted with kind, system, and previous_wiki_pages from the old yaml entry.
+# Also: a deleted generic source now carries kind=generic (uniformity).
+echo ""
+echo "Test 21: deleted entries carry kind + system from prior yaml"
+V21=$(make_vault vault21)
+mkdir -p "$V21/raw" "$V21/src/documentation/conf/api" "$V21/wiki/sources" "$V21/wiki/entities"
+echo "gen body" > "$V21/raw/gen.md"
+echo "gen summary" > "$V21/wiki/sources/gen.md"
+(cd "$V21" && node "$SCRIPT" commit --source raw/gen.md >/dev/null)
+echo "str body" > "$V21/src/documentation/conf/api/old.md"
+echo "str entity" > "$V21/wiki/entities/old-api.md"
+(cd "$V21" && node "$SCRIPT" commit --source src/documentation/conf/api/old.md >/dev/null)
+# Delete both on disk.
+rm "$V21/raw/gen.md" "$V21/src/documentation/conf/api/old.md"
+OUT=$( (cd "$V21" && node "$SCRIPT" diff) )
+assert_eq "deleted count is 2"                "2" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
+assert_eq "generic delete carries kind"        "generic" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='raw/gen.md'); process.stdout.write(e.kind)})")"
+assert_eq "generic delete has no system"       "undefined" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='raw/gen.md'); process.stdout.write(String(e.system))})")"
+assert_eq "structured delete kind"             "structured" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.kind)})")"
+assert_eq "structured delete system"           "conf" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.system)})")"
+assert_eq "structured delete prev wiki page"   "wiki/entities/old-api.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{const e=JSON.parse(d).deleted.find(x=>x.path==='src/documentation/conf/api/old.md'); process.stdout.write(e.previous_wiki_pages[0])})")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

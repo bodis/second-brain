@@ -228,20 +228,22 @@ function cmdDiff(vault) {
   for (const f of fsFiles) {
     const y = yamlByPath.get(f.path);
     if (!y) {
-      const entry = { path: f.path, kind: f.kind, sha256: f.sha256, bytes: f.bytes, mtime: f.mtime };
+      const entry = { path: f.path, kind: f.kind };
       if (f.system) entry.system = f.system;
+      entry.sha256 = f.sha256;
+      entry.bytes = f.bytes;
+      entry.mtime = f.mtime;
       newList.push(entry);
     } else if (y.sha256 !== f.sha256) {
-      const entry = {
-        path: f.path,
-        kind: y.kind || 'generic',
-        sha256: f.sha256,
-        bytes: f.bytes,
-        mtime: f.mtime,
-        previous_sha256: y.sha256,
-        previous_wiki_pages: Array.isArray(y.wiki_pages) ? y.wiki_pages : [],
-      };
-      if (f.system) entry.system = f.system;
+      const kind = y.kind || 'generic';
+      const entry = { path: f.path, kind };
+      const system = y.system || f.system;
+      if (kind === 'structured' && system) entry.system = system;
+      entry.sha256 = f.sha256;
+      entry.bytes = f.bytes;
+      entry.mtime = f.mtime;
+      entry.previous_sha256 = y.sha256;
+      entry.previous_wiki_pages = Array.isArray(y.wiki_pages) ? y.wiki_pages : [];
       changedList.push(entry);
     }
   }
@@ -249,10 +251,11 @@ function cmdDiff(vault) {
   const deletedList = [];
   for (const y of doc.sources) {
     if (!fsByPath.has(y.path)) {
-      deletedList.push({
-        path: y.path,
-        previous_wiki_pages: Array.isArray(y.wiki_pages) ? y.wiki_pages : [],
-      });
+      const kind = y.kind || 'generic';
+      const entry = { path: y.path, kind };
+      if (kind === 'structured' && y.system) entry.system = y.system;
+      entry.previous_wiki_pages = Array.isArray(y.wiki_pages) ? y.wiki_pages : [];
+      deletedList.push(entry);
     }
   }
 
