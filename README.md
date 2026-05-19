@@ -14,6 +14,7 @@ The LLM is the librarian. You're the curator.
 
 - **[Obsidian](https://obsidian.md)** — the markdown editor you'll browse your wiki in
 - **[Claude Code](https://claude.ai/code)** — the AI coding agent that reads sources and maintains the wiki
+- **git** — required at runtime. The vault is a git repo; the ingest tool depends on it.
 
 ## Install
 
@@ -24,6 +25,7 @@ Two install modes — pick whichever fits.
 ```bash
 # 1. From inside the directory that will become your vault:
 git clone https://github.com/bodis/second-brain.git .claude/plugins/second-brain
+(cd .claude/plugins/second-brain && npm install --omit=dev)
 
 # 2. One-time bootstrap to launch the wizard:
 claude --plugin-dir .claude/plugins/second-brain
@@ -40,6 +42,7 @@ cd <vault> && claude
 ```bash
 # 1. Clone once to your home dir:
 git clone https://github.com/bodis/second-brain.git ~/.claude/plugins/second-brain
+(cd ~/.claude/plugins/second-brain && npm install --omit=dev)
 
 # 2. Merge the snippet from docs/install/user-home-settings.json into
 #    ~/.claude/settings.json (adjust the "path" field to your absolute path).

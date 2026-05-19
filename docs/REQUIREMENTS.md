@@ -37,6 +37,8 @@ The magic is in the agent config file (CLAUDE.md, AGENTS.md, etc.) at the root o
 - Cursor → `.cursor/rules/*.mdc`
 - Gemini CLI → `GEMINI.md`
 
+**git** — the vault is a git repo; ingest state tracking depends on git commits.
+
 **Obsidian Web Clipper** — a browser extension that saves web articles as clean markdown files directly into your vault's `raw/` folder. This is the primary way to feed source material in.
 > https://chromewebstore.google.com/detail/obsidian-web-clipper/cnjifjpddelmedmihgijeibhnjfabmlf
 

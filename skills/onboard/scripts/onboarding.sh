@@ -18,7 +18,14 @@ mkdir -p "$VAULT_ROOT/wiki/sources"
 mkdir -p "$VAULT_ROOT/wiki/entities"
 mkdir -p "$VAULT_ROOT/wiki/concepts"
 mkdir -p "$VAULT_ROOT/wiki/synthesis"
+mkdir -p "$VAULT_ROOT/wiki/.state"
 mkdir -p "$VAULT_ROOT/output"
+
+# CR-002: the state directory must exist as a tracked dir from day one so the
+# first ingest's commit doesn't fight with .gitignore semantics on empty dirs.
+if [ ! -f "$VAULT_ROOT/wiki/.state/.gitkeep" ]; then
+  : > "$VAULT_ROOT/wiki/.state/.gitkeep"
+fi
 
 # 2. Create wiki/index.md if it doesn't exist
 if [ ! -f "$VAULT_ROOT/wiki/index.md" ]; then
