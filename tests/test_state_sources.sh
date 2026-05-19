@@ -179,6 +179,36 @@ OUT=$( (cd "$V7" && node "$SCRIPT" diff) )
 assert_eq "deleted count is 1"             "1" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).deleted.length)))")"
 assert_eq "deleted carries wiki page list" "wiki/sources/article.md" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).deleted[0].previous_wiki_pages[0]))")"
 
+
+# Test 8: commit on a source that produced no wiki output:
+#   (a) without --allow-empty → exit 4, state unchanged.
+#   (b) with --allow-empty   → entry recorded with wiki_pages: [], commit happens.
+echo ""
+echo "Test 8: commit on source with no wiki changes"
+V8=$(make_vault vault8)
+echo "rubbish" > "$V8/raw/junk.md"
+
+# (a) Without flag: must fail with exit 4 and not touch state.
+set +e
+(cd "$V8" && node "$SCRIPT" commit --source raw/junk.md >/dev/null 2>&1)
+RC=$?
+set -e
+assert_eq "exit code is 4 without --allow-empty" "4" "$RC"
+assert_eq "no sources.yaml created"               "no" "$([ -f "$V8/wiki/.state/sources.yaml" ] && echo yes || echo no)"
+
+# (b) With flag: succeeds, records entry with empty wiki_pages.
+BEFORE=$(commit_count "$V8")
+OUT=$( (cd "$V8" && node "$SCRIPT" commit --source raw/junk.md --allow-empty) )
+AFTER=$(commit_count "$V8")
+assert_eq "commit count incremented"  "$((BEFORE + 1))" "$AFTER"
+assert_eq "commit message reflects empty" "ingest: raw/junk.md → no output (allow-empty)" "$(last_msg "$V8")"
+YAML="$V8/wiki/.state/sources.yaml"
+assert_eq "wiki_pages is empty"       "0" "$(get_yaml "$YAML" "d.sources[0].wiki_pages.length")"
+
+# Subsequent diff must not see the file as new.
+OUT=$( (cd "$V8" && node "$SCRIPT" diff) )
+assert_eq "diff no longer sees junk.md as new" "0" "$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).new.length)))")"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
