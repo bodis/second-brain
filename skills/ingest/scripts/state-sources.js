@@ -1,6 +1,35 @@
 #!/usr/bin/env node
 'use strict';
 
+/**
+ * @typedef {Object} Source
+ * @property {string} path             POSIX-style vault-relative path.
+ * @property {'generic'|'structured'}  kind  Source classification. CR-002 only emits `generic`.
+ * @property {string} sha256           Content hash, hex lowercase, 64 chars.
+ * @property {number} bytes            File size in bytes.
+ * @property {string} mtime            ISO 8601 UTC timestamp ending in `Z`.
+ * @property {string} [ingested_at]    ISO 8601 UTC; set by `commit`, absent before then.
+ * @property {string[]} [wiki_pages]   POSIX-style vault-relative paths of wiki pages this source's ingest touched.
+ */
+
+/**
+ * @typedef {Object} DiffEntry
+ * @property {string} path
+ * @property {'generic'|'structured'} [kind]
+ * @property {string} [sha256]
+ * @property {number} [bytes]
+ * @property {string} [mtime]
+ * @property {string} [previous_sha256]
+ * @property {string[]} [previous_wiki_pages]
+ */
+
+/**
+ * @typedef {Object} DiffResult
+ * @property {DiffEntry[]} new      Sources on disk but absent from sources.yaml.
+ * @property {DiffEntry[]} changed  Sources whose content hash differs from sources.yaml. Carries previous_sha256 + previous_wiki_pages.
+ * @property {DiffEntry[]} deleted  Sources in sources.yaml but no longer on disk. Carries previous_wiki_pages only.
+ */
+
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
