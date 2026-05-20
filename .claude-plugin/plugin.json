@@ -1,8 +1,20 @@
 {
   "name": "second-brain",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "LLM-maintained personal knowledge base for Obsidian. Drop raw sources into a folder; the librarian compiles them into a structured wiki.",
   "author": { "name": "Tamás Bódis" },
-  "homepage": "https://github.com/bodis/second-brain",
-  "repository": "https://github.com/bodis/second-brain"
+  "homepage": "https://github.com/bodist/second-brain",
+  "repository": "https://github.com/bodist/second-brain",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/validate-wiki.js\" all"
+          }
+        ]
+      }
+    ]
+  }
 }
