@@ -590,6 +590,40 @@ function candidatesCover(vault, scope) {
   return { summaries: out };
 }
 
+// ---------- candidates: relations ----------
+
+const RELATIONS_OCCURRENCE_THRESHOLD = 3;
+
+function candidatesRelations(vault, scope) {
+  const pages = [...walkMarkdown(vault, scope)];
+  // We need raw prose occurrence counts (linkRewrite uses a Set; here we count).
+  const out = [];
+  for (const rel of pages) {
+    const abs = path.join(vault, rel);
+    let page;
+    try { page = readPage(abs); }
+    catch { continue; }
+    const counts = new Map();
+    let m;
+    WIKILINK_RE.lastIndex = 0;
+    while ((m = WIKILINK_RE.exec(page.body)) !== null) {
+      const target = m[1].trim();
+      counts.set(target, (counts.get(target) || 0) + 1);
+    }
+    const pattern = [];
+    for (const [target, n] of counts) {
+      if (n < RELATIONS_OCCURRENCE_THRESHOLD) continue;
+      let suggested = 'see-also';
+      if (target.startsWith('src/documentation/')) suggested = 'defined-by';
+      pattern.push({ target, occurrences_in_prose: n, suggested_relation: suggested });
+    }
+    if (pattern.length === 0) continue;
+    pattern.sort((a, b) => b.occurrences_in_prose - a.occurrences_in_prose);
+    out.push({ path: rel, outgoing_pattern: pattern });
+  }
+  return { pages: out };
+}
+
 // ---------- candidates dispatcher ----------
 
 function cmdCandidates(vault, args) {
@@ -603,7 +637,8 @@ function cmdCandidates(vault, args) {
   else if (args.kind === 'parent')       result = candidatesParent(vault, scope);
   else if (args.kind === 'recategorize') result = candidatesRecategorize(vault, scope);
   else if (args.kind === 'cover')        result = candidatesCover(vault, scope);
-  else die(`unknown --kind: ${args.kind}`, 1);   // relations lands in a later task
+  else if (args.kind === 'relations')    result = candidatesRelations(vault, scope);
+  else die(`unknown --kind: ${args.kind}`, 1);
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }
 

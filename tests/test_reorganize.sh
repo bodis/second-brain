@@ -838,6 +838,44 @@ assert_eq "summary path"      "wiki/sources/old.md" "$PATH_"
 COV=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).summaries[0].candidate_covers[0]))")
 assert_eq "candidate cover"   "wiki/synthesis/big.md" "$COV"
 
+# Test 18: candidates --kind relations flags repeated outgoing wikilinks.
+echo ""
+echo "Test 18: candidates --kind relations"
+V=$(make_vault cand-rel)
+cat > "$V/wiki/concepts/oauth.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# OAuth
+
+See [[src/documentation/foo/auth]] for the canonical definition.
+Again [[src/documentation/foo/auth]] for the flow diagram.
+And once more [[src/documentation/foo/auth]] for examples.
+MEOF
+mkdir -p "$V/src/documentation/foo"
+cat > "$V/src/documentation/foo/auth.md" <<'MEOF'
+---
+tags: [t]
+sources: [src/documentation/foo/auth.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# auth
+MEOF
+(cd "$V" && git add . && git commit -qm "setup")
+OUT=$( (cd "$V" && node "$SCRIPT" candidates --kind relations --json) )
+P_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).pages.length)))")
+[ "$P_COUNT" -ge 1 ] && echo "  PASS: at least one relations candidate ($P_COUNT)" && PASS=$((PASS+1)) \
+                     || (echo "  FAIL: expected ≥1 candidate, got $P_COUNT"; FAIL=$((FAIL+1)))
+OCC=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).pages[0].outgoing_pattern[0].occurrences_in_prose)))")
+[ "$OCC" -ge 3 ] && echo "  PASS: occurrences_in_prose ≥3 ($OCC)" && PASS=$((PASS+1)) \
+                 || (echo "  FAIL: occurrences_in_prose is $OCC"; FAIL=$((FAIL+1)))
+SUGG=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).pages[0].outgoing_pattern[0].suggested_relation))")
+assert_eq "suggested_relation"  "defined-by" "$SUGG"
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
