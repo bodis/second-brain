@@ -172,6 +172,17 @@ function validateKey(value, spec) {
     if (isValidDateString(value)) return null;
     return `expected ${spec.format || 'YYYY-MM-DD'} date`;
   }
+  if (spec.type === 'map[string,list[string]]') {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return 'expected a map of string keys to lists of strings';
+    }
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof k !== 'string') return `relation name '${k}' must be a string`;
+      if (!Array.isArray(v)) return `relation '${k}' must be a list of strings`;
+      if (!v.every(x => typeof x === 'string')) return `relation '${k}' has non-string entries`;
+    }
+    return null;
+  }
   return `unknown contract type: ${spec.type}`;
 }
 
@@ -308,6 +319,11 @@ function runFrontmatter(vault, json, quiet = false) {
       const problem = validateKey(fm.data[key], spec);
       if (problem) errors.push({ path: rel, key, problem });
     }
+    for (const [key, spec] of Object.entries(contract.optional || {})) {
+      if (!(key in fm.data)) continue;  // optional — skip if absent
+      const problem = validateKey(fm.data[key], spec);
+      if (problem) errors.push({ path: rel, key, problem });
+    }
   }
   const code = errors.length > 0 ? 2 : 0;
   if (json) {
@@ -332,14 +348,32 @@ function runWikilinks(vault, json, quiet = false) {
   const inbound = new Map(); // resolved-target-path -> count
   for (const rel of pages) {
     const abs = path.join(vault, rel);
+    // Prose wikilinks: existing behaviour, but tagged with source: "wikilink".
     for (const target of extractWikilinks(abs)) {
       const resolved = resolveWikilink(target, vault, bareIndex);
       if (!resolved) {
-        broken.push({ from: rel, target });
+        broken.push({ from: rel, target, source: 'wikilink' });
       } else if (resolved !== rel) {
         // Self-links do not count toward inbound — an orphan that mentions itself
         // is still an orphan from the graph's perspective.
         inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
+      }
+    }
+    // Frontmatter relations: targets are resolved the same three ways and
+    // contribute the same broken/inbound bookkeeping. CR-005 §4.4.
+    const fm = readFrontmatter(abs);
+    if (fm.ok && fm.data && fm.data.relations && typeof fm.data.relations === 'object') {
+      for (const targets of Object.values(fm.data.relations)) {
+        if (!Array.isArray(targets)) continue;  // structural problem caught by `frontmatter`
+        for (const target of targets) {
+          if (typeof target !== 'string') continue;
+          const resolved = resolveWikilink(target, vault, bareIndex);
+          if (!resolved) {
+            broken.push({ from: rel, target, source: 'relation' });
+          } else if (resolved !== rel) {
+            inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
+          }
+        }
       }
     }
   }

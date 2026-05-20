@@ -321,6 +321,60 @@ set -e
 assert_eq "all worst-code exit 2" "2" "$RC"
 assert_eq "all frontmatter errors > 0" "1" "$(echo "$OUT" | jq_get frontmatter.errors.length)"
 
+# Test: frontmatter accepts a valid relations: map (CR-005)
+echo ""
+echo "Test: relations-valid fixture passes frontmatter check"
+V=$(prepare_vault relations-valid)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "relations-valid frontmatter exit code"  "0" "$RC"
+ERR_COUNT=$(echo "$OUT" | jq_get "errors.length")
+assert_eq "relations-valid: 0 errors"              "0" "$ERR_COUNT"
+
+# Test: frontmatter rejects a malformed relations: map (CR-005)
+echo ""
+echo "Test: relations-bad-shape fixture fails frontmatter check"
+V=$(prepare_vault relations-bad-shape)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "relations-bad-shape frontmatter exit code"  "2" "$RC"
+ERR_COUNT=$(echo "$OUT" | jq_get "errors.length")
+assert_eq "relations-bad-shape: 1 error"               "1" "$ERR_COUNT"
+ERR_KEY=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).errors[0].key))")
+assert_eq "relations-bad-shape: error key is 'relations'"  "relations" "$ERR_KEY"
+
+# Test: wikilinks flags unresolved relations: targets (CR-005 §10.1.12)
+echo ""
+echo "Test: relations-broken-target fixture flags broken relation target"
+V=$(prepare_vault relations-broken-target)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+assert_eq "relations-broken-target wikilinks exit code" "1" "$RC"
+BROKEN_COUNT=$(echo "$OUT" | jq_get "broken.length")
+assert_eq "relations-broken-target: 1 broken entry"     "1" "$BROKEN_COUNT"
+BROKEN_SOURCE=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).broken[0].source))")
+assert_eq "relations-broken-target: source is 'relation'" "relation" "$BROKEN_SOURCE"
+BROKEN_TARGET=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).broken[0].target))")
+assert_eq "relations-broken-target: target matches" "wiki/concepts/does-not-exist" "$BROKEN_TARGET"
+
+# Test: existing prose wikilink broken entries now carry source: "wikilink"
+echo ""
+echo "Test: wikilink-broken fixture now reports source: wikilink"
+V=$(prepare_vault wikilink-broken)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+assert_eq "wikilink-broken exit code" "1" "$RC"
+BROKEN_SOURCE=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).broken[0].source))")
+assert_eq "wikilink-broken: source is 'wikilink'" "wikilink" "$BROKEN_SOURCE"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

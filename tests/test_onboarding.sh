@@ -91,6 +91,8 @@ assert_file "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml"
 assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "schema_version: 1"
 assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "generated_by: scripts/validate-wiki.js"
 assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "sources:"
+assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "optional:"
+assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "relations:"
 
 echo ""
 
