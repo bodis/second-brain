@@ -44,6 +44,200 @@ function findVaultRoot(start) {
   }
 }
 
+// Refuse any path that isn't inside wiki/. Spec §5.4.
+function requireWikiPath(label, vaultPath) {
+  if (!vaultPath || !vaultPath.startsWith('wiki/')) {
+    die(`reorganize only operates on wiki/, got ${label}=${vaultPath}`, 3);
+  }
+}
+
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Read a markdown file's frontmatter block plus the body that follows.
+// Returns { frontmatter: object, body: string, raw: string } or throws if
+// no leading `---` block. Uses CORE_SCHEMA so dates stay as strings — same
+// rule as scripts/validate-wiki.js.
+function readPage(absPath) {
+  const text = fs.readFileSync(absPath, 'utf8');
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!m) throw new Error(`no frontmatter in ${absPath}`);
+  const fm = yaml.load(m[1], { schema: yaml.CORE_SCHEMA }) || {};
+  return { frontmatter: fm, body: m[2], raw: text };
+}
+
+// Write a markdown file by serialising frontmatter through js-yaml.dump and
+// concatenating the body verbatim. Preserves the frontmatter's existing key
+// order because js-yaml preserves insertion order.
+//
+// `flowLevel: 1` keeps depth-1 lists inline (`tags: [demo]`,
+// `sources: [raw/x.md]`) so a move that only touches one relation does not
+// re-flow every other key into block style. The visual cost is that the
+// `relations:` map also collapses to one line (`relations: {see-also: [...]}`)
+// rather than the multi-line layout in CR-005 §4.1 — functionally identical
+// and revalidates cleanly.
+//
+// `schema: CORE_SCHEMA` matches readPage so YAML 1.1-style timestamps like
+// `2026-05-20` are treated as plain strings on both sides — without it, dump
+// would emit `updated: '2026-05-20'` (quoted) to disambiguate from a YAML
+// timestamp, which is functionally identical but visually noisy and trips
+// downstream string-equality checks.
+function writePage(absPath, page) {
+  const dump = yaml.dump(page.frontmatter, { lineWidth: -1, sortKeys: false, flowLevel: 1, schema: yaml.CORE_SCHEMA });
+  fs.writeFileSync(absPath, `---\n${dump}---\n${page.body}`);
+}
+
+// Walk wiki/ once and return vault-relative .md paths.
+function* walkMarkdown(vault, subdir) {
+  const abs = path.join(vault, subdir);
+  if (!fs.existsSync(abs)) return;
+  for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const child = path.join(subdir, entry.name);
+    if (entry.isDirectory()) yield* walkMarkdown(vault, child);
+    else if (entry.isFile() && entry.name.endsWith('.md'))
+      yield child.split(path.sep).join('/');
+  }
+}
+
+// Drop the `.md` suffix from a vault path (`wiki/concepts/foo.md` → `wiki/concepts/foo`).
+function stripMd(vaultPath) {
+  return vaultPath.endsWith('.md') ? vaultPath.slice(0, -3) : vaultPath;
+}
+
+// Rewrite every wikilink and every `relations:` target in every wiki/*.md
+// (except wiki/index.md) that resolves to `fromPath` so it points at `toPath`.
+// `fromPath` and `toPath` are both vault-relative `.md` paths.
+//
+// Three rewrite forms handled:
+//   1. `[[basename]]` (and `[[basename|alias]]`) — rewritten only when the
+//      basename uniquely resolves to fromPath under the validator's resolver.
+//      We avoid false positives by recomputing the bare-name index AFTER each
+//      rewrite call's filesystem effects are in place; callers do the rename
+//      THEN call linkRewrite.
+//   2. `[[wiki/path/to/page]]` (and `[[wiki/path/to/page|alias]]`) — rewritten
+//      when the embedded path equals stripMd(fromPath).
+//   3. Frontmatter `relations: { rel: [...targets] }` — each target string is
+//      treated the same way as (2) when it starts with `wiki/`, or as (1)
+//      when it's a bare name.
+//
+// Does NOT touch frontmatter `sources:` — those are filename identities, not
+// wikilink references (spec §6.2, test §10.1.4).
+const WIKILINK_RE = /\[\[([^\]\n|]+)(\|[^\]\n]*)?\]\]/g;
+
+function linkRewrite(vault, fromPath, toPath) {
+  const fromStripped = stripMd(fromPath);
+  const toStripped = stripMd(toPath);
+  const fromBasename = path.basename(fromStripped).toLowerCase();
+  const toBasename = path.basename(toStripped);
+
+  // Build a bare-name → resolved-path map so we only rewrite bare names
+  // that uniquely resolve to fromPath. This protects against basename
+  // collisions in other folders.
+  const bareIndex = new Map();
+  for (const rel of walkMarkdown(vault, 'wiki')) {
+    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
+  }
+  const bareIsAmbiguous = bareIndex.get(fromBasename) !== fromPath;
+
+  function rewriteTarget(target) {
+    const trimmed = target.trim();
+    if (trimmed.startsWith('wiki/')) {
+      // Path form: exact match against stripMd(fromPath).
+      if (trimmed === fromStripped) return toStripped;
+      return target;
+    }
+    if (trimmed.startsWith('src/documentation/')) return target;
+    // Bare form: only rewrite if the basename resolves to fromPath.
+    if (!bareIsAmbiguous && trimmed.toLowerCase() === fromBasename) return toBasename;
+    return target;
+  }
+
+  for (const rel of walkMarkdown(vault, 'wiki')) {
+    if (rel === 'wiki/index.md') continue;          // index handled per-subcommand
+    if (rel === toPath) continue;                   // skip the moved file itself if it already lives at toPath
+    const abs = path.join(vault, rel);
+    let page;
+    try { page = readPage(abs); }
+    catch { continue; }                              // files without frontmatter (e.g. wiki/log.md) — skip
+    let changed = false;
+
+    // 1) Rewrite prose wikilinks in the body.
+    const newBody = page.body.replace(WIKILINK_RE, (full, target, aliasPart) => {
+      const rewritten = rewriteTarget(target);
+      if (rewritten === target) return full;
+      changed = true;
+      return `[[${rewritten}${aliasPart || ''}]]`;
+    });
+    page.body = newBody;
+
+    // 2) Rewrite `relations:` targets in the frontmatter, if present.
+    if (page.frontmatter && page.frontmatter.relations && typeof page.frontmatter.relations === 'object') {
+      for (const [key, targets] of Object.entries(page.frontmatter.relations)) {
+        if (!Array.isArray(targets)) continue;
+        const next = targets.map(t => (typeof t === 'string' ? rewriteTarget(t) : t));
+        if (next.some((v, i) => v !== targets[i])) {
+          page.frontmatter.relations[key] = next;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) writePage(abs, page);
+  }
+}
+
+// Rewrite the row for `[[fromTarget]]` in wiki/index.md to point at `toTarget`.
+// Preserves any "— summary" suffix. No-op if no row matches.
+function indexRewriteRow(vault, fromTarget, toTarget) {
+  const idxPath = path.join(vault, 'wiki', 'index.md');
+  if (!fs.existsSync(idxPath)) return;
+  const lines = fs.readFileSync(idxPath, 'utf8').split(/\r?\n/);
+  const fromRe = new RegExp(`\\[\\[${escapeRegex(fromTarget)}(\\|[^\\]]*)?\\]\\]`);
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (fromRe.test(lines[i])) {
+      lines[i] = lines[i].replace(fromRe, `[[${toTarget}]]`);
+      changed = true;
+    }
+  }
+  if (changed) fs.writeFileSync(idxPath, lines.join('\n'));
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cmdMovePage(vault, args) {
+  requireWikiPath('--from', args.from);
+  requireWikiPath('--to', args.to);
+  const fromAbs = path.join(vault, args.from);
+  const toAbs = path.join(vault, args.to);
+  if (!fs.existsSync(fromAbs)) die(`--from does not exist: ${args.from}`, 3);
+  if (fs.existsSync(toAbs)) die(`--to already exists: ${args.to}`, 3);
+
+  // Rewrite inbound references BEFORE the rename. linkRewrite builds its
+  // bare-name resolver from the current filesystem; if we rename first the
+  // resolver can no longer find fromPath and would skip every `[[basename]]`
+  // rewrite.
+  linkRewrite(vault, args.from, args.to);
+
+  // Bump `updated:` on the source page, then rename.
+  const moved = readPage(fromAbs);
+  moved.frontmatter.updated = todayUtc();
+  writePage(fromAbs, moved);
+  fs.mkdirSync(path.dirname(toAbs), { recursive: true });
+  fs.renameSync(fromAbs, toAbs);
+
+  // Update the index row.
+  indexRewriteRow(vault, stripMd(args.from), stripMd(args.to));
+
+  // Commit.
+  git(['add', '--', 'wiki/'], vault);
+  git(['commit', '-m', `reorganize: move ${args.from} → ${args.to}`], vault);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -101,7 +295,7 @@ function main() {
   const vault = findVaultRoot(process.cwd());
   if (cmd === 'begin') return cmdBegin(vault);
   if (cmd === 'candidates') return die('candidates: not implemented yet', 1);
-  if (cmd === 'move-page') return die('move-page: not implemented yet', 1);
+  if (cmd === 'move-page') return cmdMovePage(vault, args);
   if (cmd === 'merge-page') return die('merge-page: not implemented yet', 1);
   if (cmd === 'mark-covered') return die('mark-covered: not implemented yet', 1);
   if (cmd === 'parent-create') return die('parent-create: not implemented yet', 1);
