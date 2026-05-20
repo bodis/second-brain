@@ -111,3 +111,11 @@ your-vault/
 ├── output/
 └── CLAUDE.md
 ```
+
+## 7. Script runtime
+
+All shared scripts under `scripts/` and under any `skills/*/scripts/` directory run on **Node ≥18** with **`js-yaml` 4.x** as the only YAML dependency. Both are declared in the top-level `package.json` (`engines.node`, `dependencies.js-yaml`).
+
+- New CRs that need scripting use the same runtime. Do not introduce Python, Deno, or a different YAML library without amending this convention.
+- Scripts are invoked via `node "$CLAUDE_PLUGIN_ROOT/scripts/<name>.js"` from SKILL prompts and hooks, or `node "$CLAUDE_PLUGIN_ROOT/skills/<skill>/scripts/<name>.js"` for skill-private scripts.
+- Single-file shape is preferred (see `skills/ingest/scripts/state-sources.js`); split into a `lib/` directory only after a third consumer appears.
