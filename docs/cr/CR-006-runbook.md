@@ -59,7 +59,7 @@ Expectations:
 
 - `ls` shows all three files.
 - `validate-wiki.js all` exits 0 and reports clean (no broken links, no orphan pages, empty index is fine).
-- `git log --oneline` shows at least one commit — but note: `onboarding.sh` does not commit on your behalf, so the only commit you'll see is whatever you make. (The "Vault initialized" entry in `wiki/log.md` is unstaged.)
+- `git log --oneline` may be empty. `onboarding.sh` does not commit on your behalf; the "Vault initialized" entry in `wiki/log.md` is unstaged. Stage and commit when you're ready.
 
 Obsidian: switch to it and `File → Reload app` (or restart) to pick up the new `wiki/`, `raw/`, `src/`, `output/` folders alongside `.obsidian/`.
 
