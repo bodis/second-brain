@@ -348,14 +348,32 @@ function runWikilinks(vault, json, quiet = false) {
   const inbound = new Map(); // resolved-target-path -> count
   for (const rel of pages) {
     const abs = path.join(vault, rel);
+    // Prose wikilinks: existing behaviour, but tagged with source: "wikilink".
     for (const target of extractWikilinks(abs)) {
       const resolved = resolveWikilink(target, vault, bareIndex);
       if (!resolved) {
-        broken.push({ from: rel, target });
+        broken.push({ from: rel, target, source: 'wikilink' });
       } else if (resolved !== rel) {
         // Self-links do not count toward inbound — an orphan that mentions itself
         // is still an orphan from the graph's perspective.
         inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
+      }
+    }
+    // Frontmatter relations: targets are resolved the same three ways and
+    // contribute the same broken/inbound bookkeeping. CR-005 §4.4.
+    const fm = readFrontmatter(abs);
+    if (fm.ok && fm.data && fm.data.relations && typeof fm.data.relations === 'object') {
+      for (const targets of Object.values(fm.data.relations)) {
+        if (!Array.isArray(targets)) continue;  // structural problem caught by `frontmatter`
+        for (const target of targets) {
+          if (typeof target !== 'string') continue;
+          const resolved = resolveWikilink(target, vault, bareIndex);
+          if (!resolved) {
+            broken.push({ from: rel, target, source: 'relation' });
+          } else if (resolved !== rel) {
+            inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
+          }
+        }
       }
     }
   }
