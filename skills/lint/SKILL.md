@@ -24,7 +24,7 @@ node "$CLAUDE_PLUGIN_ROOT/scripts/validate-wiki.js" wikilinks --json
 ```
 
 The JSON has two keys:
-- `broken[]` — `{from, target}` entries where `[[target]]` does not resolve under any of the three rules (bare name, `wiki/...` path, `src/documentation/...` path).
+- `broken[]` — `{from, target, source}` entries where the target does not resolve under any of the three rules (bare name, `wiki/...` path, `src/documentation/...` path). `source` is `"wikilink"` for prose `[[target]]` references and `"relation"` when the unresolved target came from a frontmatter `relations:` entry.
 - `orphans[]` — `{path}` entries for pages under `wiki/{sources,entities,concepts,synthesis}/` with zero inbound `[[…]]` links.
 
 Present both arrays grouped together. For each `broken` entry, suggest either fixing the link or creating the target page (treat as a "Missing pages" candidate — see §4). For each `orphan`, judge whether it's intentionally standalone or should be linked from somewhere thematically related.

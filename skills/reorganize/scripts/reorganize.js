@@ -19,7 +19,6 @@
  *   1 warning
  *   2 structural error after a move; the just-applied commit has been reverted
  *   3 invariant refusal (scope outside wiki/, merged body too short, etc.); no commit
- *   6 uncommitted non-wiki changes; SKILL re-runs `begin` and retries
  */
 
 const fs = require('fs');
