@@ -9,6 +9,18 @@ set -e
 
 VAULT_ROOT="${1:-.}"
 
+# CR-006: refuse to scaffold if the vault is already onboarded.
+# Truth table (spec §4.1):
+#   .obsidian/ present + wiki/ present  -> abort (already onboarded)
+#   .obsidian/ absent  + wiki/ present  -> abort (orphaned scaffold, added in Task 2)
+#   .obsidian/ present + wiki/ absent   -> in-place mode (proceed)
+#   .obsidian/ absent  + wiki/ absent   -> greenfield mode (proceed)
+if [ -d "$VAULT_ROOT/.obsidian" ] && [ -d "$VAULT_ROOT/wiki" ]; then
+  echo "error: vault already onboarded — both .obsidian/ and wiki/ exist at $VAULT_ROOT" >&2
+  echo "Re-running /second-brain:onboard is not supported. Use /second-brain:lint to check health." >&2
+  exit 2
+fi
+
 echo "=== Second Brain Onboarding ===" >&2
 
 # 1. Create directory structure

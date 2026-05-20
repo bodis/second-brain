@@ -116,6 +116,38 @@ else
 fi
 
 echo ""
+
+# Test 6: Abort — vault already onboarded (.obsidian/ + wiki/ both present)
+echo "Test 6: Abort — already onboarded"
+ABORT_VAULT="$TEST_DIR/abort-already"
+mkdir -p "$ABORT_VAULT/.obsidian" "$ABORT_VAULT/wiki"
+set +e
+ABORT_OUT=$(bash "$ONBOARDING" "$ABORT_VAULT" 2>&1 >/dev/null)
+ABORT_EXIT=$?
+set -e
+if [ "$ABORT_EXIT" != "0" ]; then
+  echo "  PASS: script exited non-zero on already-onboarded vault (exit=$ABORT_EXIT)"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: script exited 0 on already-onboarded vault (expected non-zero)"
+  FAIL=$((FAIL + 1))
+fi
+if echo "$ABORT_OUT" | grep -q "already onboarded"; then
+  echo "  PASS: error message mentions 'already onboarded'"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: error message did not mention 'already onboarded' — got: $ABORT_OUT"
+  FAIL=$((FAIL + 1))
+fi
+if [ ! -d "$ABORT_VAULT/raw" ] && [ ! -d "$ABORT_VAULT/wiki/sources" ]; then
+  echo "  PASS: no scaffold directories were created"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: scaffold directories were created despite abort"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
