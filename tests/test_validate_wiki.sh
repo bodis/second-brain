@@ -262,6 +262,41 @@ echo "$OUT" | grep -q '"wiki/concepts/self-loop.md"' \
   && echo "  PASS: self-link page is still orphan" && PASS=$((PASS + 1)) \
   || (echo "  FAIL: self-link page should be orphan"; echo "    actual: $OUT"; FAIL=$((FAIL + 1)))
 
+# Test 12: clean fixture → index exits 0.
+echo ""
+echo "Test 12: index on clean fixture"
+V=$(prepare_vault clean)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" index --json) )
+RC=$?
+set -e
+assert_eq "clean index exit 0" "0" "$RC"
+assert_eq "clean missing_rows length 0" "0" "$(echo "$OUT" | jq_get missing_rows.length)"
+assert_eq "clean dead_rows length 0" "0" "$(echo "$OUT" | jq_get dead_rows.length)"
+
+# Test 13: missing row → exit 1, missing_rows[] includes the orphaned file path.
+echo ""
+echo "Test 13: index missing row"
+V=$(prepare_vault index-missing-row)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" index --json) )
+RC=$?
+set -e
+assert_eq "missing-row exit 1" "1" "$RC"
+assert_eq "missing_rows[0] is widget" "wiki/concepts/widget.md" "$(echo "$OUT" | jq_get missing_rows.0)"
+assert_eq "missing-row dead_rows length 0" "0" "$(echo "$OUT" | jq_get dead_rows.length)"
+
+# Test 14: dead row → exit 2, dead_rows[].target names the unresolved target.
+echo ""
+echo "Test 14: index dead row"
+V=$(prepare_vault index-dead-row)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" index --json) )
+RC=$?
+set -e
+assert_eq "dead-row exit 2" "2" "$RC"
+assert_eq "dead_rows[0].target names deleted-page" "wiki/sources/deleted-page" "$(echo "$OUT" | jq_get dead_rows.0.target)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

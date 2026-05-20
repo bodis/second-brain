@@ -223,6 +223,17 @@ function isOrphanCandidate(rel) {
   return ORPHAN_ROOTS.some(root => rel === root + '.md' || rel.startsWith(root + '/'));
 }
 
+// Parse `wiki/index.md` and return the list of wikilink targets it contains.
+// We deliberately treat every [[target]] anywhere in the file as a row entry;
+// the doc-section structure is for humans, not for the validator.
+function readIndexTargets(vault) {
+  const abs = path.join(vault, 'wiki', 'index.md');
+  if (!fs.existsSync(abs)) return [];
+  return extractWikilinks(abs); // already trimmed
+}
+
+const INDEXED_ROOTS = ['wiki/sources', 'wiki/entities', 'wiki/concepts', 'wiki/synthesis'];
+
 function runAll(_vault, _json) {
   // Stub — Task 7 fills this in by composing the three subcommands.
   return { code: 0, output: '' };
@@ -297,9 +308,50 @@ function runWikilinks(vault, json) {
   return { code, output: '' };
 }
 
-function runIndex(_vault, _json) {
-  // Stub — Task 6 fills this in.
-  return { code: 0, output: '' };
+function runIndex(vault, json) {
+  // Build the bare-name index inline (same pattern as runWikilinks).
+  const pages = [...walkMarkdown(vault, 'wiki')];
+  const bareIndex = new Map();
+  for (const rel of pages) {
+    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
+  }
+  const indexTargets = readIndexTargets(vault);
+
+  // Set of resolved vault-relative paths the index covers.
+  const covered = new Set();
+  const deadRows = [];
+  for (const target of indexTargets) {
+    const resolved = resolveWikilink(target, vault, bareIndex);
+    if (resolved) covered.add(resolved);
+    else deadRows.push({ target });
+  }
+
+  // Every .md file under the indexed roots must be covered.
+  const missingRows = [];
+  for (const root of INDEXED_ROOTS) {
+    for (const rel of walkMarkdown(vault, root)) {
+      if (!covered.has(rel)) missingRows.push(rel);
+    }
+  }
+
+  let code = 0;
+  if (deadRows.length > 0) code = 2;
+  else if (missingRows.length > 0) code = 1;
+
+  if (json) {
+    return {
+      code,
+      output: JSON.stringify({ missing_rows: missingRows, dead_rows: deadRows }, null, 2) + '\n',
+    };
+  }
+  if (code === 0) return { code: 0, output: '' };
+  if (deadRows.length > 0) {
+    for (const d of deadRows) process.stderr.write(`index: dead row -> ${d.target}\n`);
+  }
+  if (missingRows.length > 0) {
+    process.stderr.write(`index: ${missingRows.length} missing row(s); run sync-index.js to fix\n`);
+  }
+  return { code, output: '' };
 }
 
 function emit(result) {
