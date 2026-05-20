@@ -757,6 +757,87 @@ M_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); pro
 [ "$M_COUNT" -ge 3 ] && echo "  PASS: cluster has 3+ members ($M_COUNT)" && PASS=$((PASS+1)) \
                      || (echo "  FAIL: cluster has $M_COUNT members"; FAIL=$((FAIL+1)))
 
+# Test 16: candidates --kind recategorize flags synthesising concept pages.
+echo ""
+echo "Test 16: candidates --kind recategorize"
+V=$(make_vault cand-recat)
+cat > "$V/wiki/concepts/synthesiser.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/a.md, raw/b.md, raw/c.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# Synthesiser
+
+[[wiki/concepts/sub-1]] [[wiki/concepts/sub-2]] [[wiki/concepts/sub-3]]
+MEOF
+for n in sub-1 sub-2 sub-3; do
+  cat > "$V/wiki/concepts/$n.md" <<EOF
+---
+tags: [t]
+sources: [raw/a.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# $n
+EOF
+done
+(cd "$V" && git add . && git commit -qm "setup")
+OUT=$( (cd "$V" && node "$SCRIPT" candidates --kind recategorize --json) )
+PG_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).pages.length)))")
+[ "$PG_COUNT" -ge 1 ] && echo "  PASS: at least one recategorize candidate ($PG_COUNT)" && PASS=$((PASS+1)) \
+                      || (echo "  FAIL: expected ≥1 candidate, got $PG_COUNT"; FAIL=$((FAIL+1)))
+SYNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).pages[0].signals.synthesises_others?'true':'false'))")
+assert_eq "first candidate is synthesising"  "true" "$SYNT"
+
+# Test 17: candidates --kind cover surfaces a source-summary covered by a synthesis page.
+echo ""
+echo "Test 17: candidates --kind cover"
+V=$(make_vault cand-cover)
+cat > "$V/wiki/sources/old.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-04-01
+updated: 2026-04-01
+---
+# Old
+
+[[shared-a]] [[shared-b]] [[shared-c]] [[shared-d]] [[shared-e]]
+MEOF
+cat > "$V/wiki/synthesis/big.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md, raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# Big
+
+[[shared-a]] [[shared-b]] [[shared-c]] [[shared-d]] [[shared-e]]
+MEOF
+for s in shared-a shared-b shared-c shared-d shared-e; do
+  cat > "$V/wiki/concepts/$s.md" <<EOF
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# $s
+EOF
+done
+(cd "$V" && git add . && git commit -qm "setup")
+OUT=$( (cd "$V" && node "$SCRIPT" candidates --kind cover --json) )
+S_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).summaries.length)))")
+[ "$S_COUNT" -ge 1 ] && echo "  PASS: at least one cover candidate ($S_COUNT)" && PASS=$((PASS+1)) \
+                     || (echo "  FAIL: expected ≥1 candidate, got $S_COUNT"; FAIL=$((FAIL+1)))
+PATH_=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).summaries[0].path))")
+assert_eq "summary path"      "wiki/sources/old.md" "$PATH_"
+COV=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).summaries[0].candidate_covers[0]))")
+assert_eq "candidate cover"   "wiki/synthesis/big.md" "$COV"
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

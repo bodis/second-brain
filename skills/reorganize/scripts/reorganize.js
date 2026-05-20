@@ -529,6 +529,67 @@ function candidatesParent(vault, scope) {
   return { clusters };
 }
 
+// ---------- candidates: recategorize ----------
+
+const RECAT_SOURCES_THRESHOLD = 3;
+const RECAT_CONCEPT_OUTLINKS_THRESHOLD = 2;
+
+function candidatesRecategorize(vault, scope) {
+  const pages = summariseScope(vault, scope);
+  const out = [];
+  for (const p of pages) {
+    if (!p.path.startsWith('wiki/concepts/')) continue;
+    const abs = path.join(vault, p.path);
+    const page = readPage(abs);
+    const sources = Array.isArray(page.frontmatter.sources) ? page.frontmatter.sources : [];
+    if (sources.length < RECAT_SOURCES_THRESHOLD) continue;
+    // Count outgoing links to other wiki/concepts/ pages.
+    let conceptOut = 0;
+    for (const r of p.outgoing) {
+      if (r.startsWith('wiki/concepts/') && r !== p.path) conceptOut++;
+    }
+    if (conceptOut < RECAT_CONCEPT_OUTLINKS_THRESHOLD) continue;
+    out.push({
+      path: p.path,
+      current_dir: 'concepts',
+      signals: { sources_count: sources.length, synthesises_others: true },
+    });
+  }
+  out.sort((a, b) => b.signals.sources_count - a.signals.sources_count);
+  return { pages: out };
+}
+
+// ---------- candidates: cover ----------
+
+const COVER_SHARED_WIKILINKS_THRESHOLD = 5;
+
+function candidatesCover(vault, scope) {
+  const pages = summariseScope(vault, scope);
+  const sources = pages.filter(p => p.path.startsWith('wiki/sources/'));
+  const synths  = pages.filter(p => p.path.startsWith('wiki/synthesis/'));
+  const out = [];
+  for (const s of sources) {
+    const covers = [];
+    let topShared = 0;
+    for (const y of synths) {
+      const shared = setIntersectionSize(s.outgoing, y.outgoing);
+      if (shared >= COVER_SHARED_WIKILINKS_THRESHOLD) {
+        covers.push({ path: y.path, shared });
+      }
+    }
+    if (covers.length === 0) continue;
+    covers.sort((a, b) => b.shared - a.shared);
+    topShared = covers[0].shared;
+    out.push({
+      path: s.path,
+      candidate_covers: covers.map(c => c.path),
+      shared_wikilinks: topShared,
+    });
+  }
+  out.sort((a, b) => b.shared_wikilinks - a.shared_wikilinks);
+  return { summaries: out };
+}
+
 // ---------- candidates dispatcher ----------
 
 function cmdCandidates(vault, args) {
@@ -538,9 +599,11 @@ function cmdCandidates(vault, args) {
   if (!scope.startsWith('wiki')) die(`--scope must be inside wiki/, got ${scope}`, 3);
 
   let result;
-  if (args.kind === 'merge')        result = candidatesMerge(vault, scope);
-  else if (args.kind === 'parent')  result = candidatesParent(vault, scope);
-  else die(`unknown --kind: ${args.kind}`, 1);   // recategorize/cover/relations land in later tasks
+  if (args.kind === 'merge')             result = candidatesMerge(vault, scope);
+  else if (args.kind === 'parent')       result = candidatesParent(vault, scope);
+  else if (args.kind === 'recategorize') result = candidatesRecategorize(vault, scope);
+  else if (args.kind === 'cover')        result = candidatesCover(vault, scope);
+  else die(`unknown --kind: ${args.kind}`, 1);   // relations lands in a later task
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }
 
