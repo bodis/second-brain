@@ -532,6 +532,59 @@ for c in p1 p2 p3; do
 done
 rm -f "$BODY"
 
+# Test 10: relations-add creates the relations: key when absent.
+echo ""
+echo "Test 10: relations-add when relations: is absent"
+V=$(make_vault rel-add-create)
+cat > "$V/wiki/concepts/oauth.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# OAuth
+MEOF
+(cd "$V" && git add . && git commit -qm "setup")
+BEFORE_CT=$(commit_count "$V")
+OUT=$( (cd "$V" && node "$SCRIPT" relations-add --page wiki/concepts/oauth.md --relation defined-by --targets "src/documentation/foo/auth.md,wiki/concepts/jwt") )
+AFTER_CT=$(commit_count "$V")
+assert_eq "one new commit"               "$((BEFORE_CT + 1))" "$AFTER_CT"
+assert_eq "commit msg names relations"   "reorganize: type relations on wiki/concepts/oauth.md" "$(last_msg "$V")"
+P=$(cat "$V/wiki/concepts/oauth.md")
+echo "$P" | grep -q "relations:"                                && echo "  PASS: relations: key added" && PASS=$((PASS+1)) || (echo "  FAIL: relations: missing"; FAIL=$((FAIL+1)))
+echo "$P" | grep -q "defined-by:"                               && echo "  PASS: relation name added" && PASS=$((PASS+1)) || (echo "  FAIL: relation name missing"; FAIL=$((FAIL+1)))
+echo "$P" | grep -q "src/documentation/foo/auth.md"             && echo "  PASS: first target listed"  && PASS=$((PASS+1)) || (echo "  FAIL: first target missing"; FAIL=$((FAIL+1)))
+echo "$P" | grep -q "wiki/concepts/jwt"                         && echo "  PASS: second target listed" && PASS=$((PASS+1)) || (echo "  FAIL: second target missing"; FAIL=$((FAIL+1)))
+TODAY=$(date -u +%Y-%m-%d)
+echo "$P" | grep -q "updated: $TODAY"                           && echo "  PASS: updated bumped" && PASS=$((PASS+1)) || (echo "  FAIL: updated not bumped"; FAIL=$((FAIL+1)))
+
+# Test 11: relations-add merges with existing relations: map and dedupes.
+echo ""
+echo "Test 11: relations-add merges and dedupes"
+V=$(make_vault rel-add-merge)
+cat > "$V/wiki/concepts/oauth.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+relations:
+  defined-by: [src/documentation/foo/auth.md]
+  see-also: [wiki/concepts/jwt]
+---
+# OAuth
+MEOF
+(cd "$V" && git add . && git commit -qm "setup")
+(cd "$V" && node "$SCRIPT" relations-add --page wiki/concepts/oauth.md --relation defined-by --targets "src/documentation/foo/auth.md,wiki/concepts/oidc") >/dev/null
+P=$(cat "$V/wiki/concepts/oauth.md")
+# defined-by should contain both the original and the new target — exactly once each.
+COUNT=$(echo "$P" | grep -c "src/documentation/foo/auth.md")
+assert_eq "auth.md appears once (deduped)"      "1" "$COUNT"
+echo "$P" | grep -q "wiki/concepts/oidc"  && echo "  PASS: new target appended" && PASS=$((PASS+1)) || (echo "  FAIL: new target missing"; FAIL=$((FAIL+1)))
+# see-also untouched.
+echo "$P" | grep -q "see-also:"           && echo "  PASS: see-also preserved"   && PASS=$((PASS+1)) || (echo "  FAIL: see-also dropped"; FAIL=$((FAIL+1)))
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

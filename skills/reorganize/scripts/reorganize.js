@@ -372,6 +372,34 @@ function cmdParentCreate(vault, args) {
   git(['commit', '-m', `reorganize: introduce parent ${args.page}`], vault);
 }
 
+function cmdRelationsAdd(vault, args) {
+  requireWikiPath('--page', args.page);
+  if (!args.relation) die('--relation is required', 1);
+  if (!args.targets) die('--targets is required', 1);
+  const abs = path.join(vault, args.page);
+  if (!fs.existsSync(abs)) die(`--page does not exist: ${args.page}`, 3);
+
+  const newTargets = args.targets.split(',').map(s => s.trim()).filter(Boolean);
+
+  const page = readPage(abs);
+  if (!page.frontmatter.relations || typeof page.frontmatter.relations !== 'object') {
+    page.frontmatter.relations = {};
+  }
+  const existing = Array.isArray(page.frontmatter.relations[args.relation])
+    ? page.frontmatter.relations[args.relation] : [];
+  const seen = new Set(existing);
+  const merged = [...existing];
+  for (const t of newTargets) {
+    if (!seen.has(t)) { merged.push(t); seen.add(t); }
+  }
+  page.frontmatter.relations[args.relation] = merged;
+  page.frontmatter.updated = todayUtc();
+  writePage(abs, page);
+
+  git(['add', '--', 'wiki/'], vault);
+  git(['commit', '-m', `reorganize: type relations on ${args.page}`], vault);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -433,7 +461,7 @@ function main() {
   if (cmd === 'merge-page') return cmdMergePage(vault, args);
   if (cmd === 'mark-covered') return cmdMarkCovered(vault, args);
   if (cmd === 'parent-create') return cmdParentCreate(vault, args);
-  if (cmd === 'relations-add') return die('relations-add: not implemented yet', 1);
+  if (cmd === 'relations-add') return cmdRelationsAdd(vault, args);
   if (cmd === 'validate-or-revert') return die('validate-or-revert: not implemented yet', 1);
   die(`unknown subcommand: ${cmd}`);
 }
