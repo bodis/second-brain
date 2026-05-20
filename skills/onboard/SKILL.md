@@ -26,6 +26,27 @@ If any check fails, stop and ask the user to install the missing tool.
 
 Guide the user through these 5 steps. Ask ONE question at a time. Each step has a sensible default — the user can accept it or provide their own value.
 
+### Step 0: Detect Mode (before any question)
+
+Inspect the current working directory **before asking anything**. The mode determines what Steps 1–4 look like.
+
+```bash
+HAS_OBSIDIAN=0; HAS_WIKI=0
+[ -d ".obsidian" ] && HAS_OBSIDIAN=1
+[ -d "wiki" ] && HAS_WIKI=1
+```
+
+Truth table:
+
+| `.obsidian/` | `wiki/` | Mode | What to do |
+|---|---|---|---|
+| absent | absent | **greenfield** | run Steps 1–5 as written below |
+| present | absent | **in-place** | follow the in-place overrides flagged in each step |
+| absent | present | **abort** | print *"Vault scaffold exists but no Obsidian config. Open the directory in Obsidian first to create `.obsidian/`, then re-run."* and stop. Do not invoke the scaffold script. |
+| present | present | **abort** | print *"This vault appears already onboarded. Re-running `/second-brain:onboard` is not supported. Use `/second-brain:lint` to check health."* and stop. |
+
+The scaffold script (`scripts/onboarding.sh`) also enforces these abort cases (exits 2 or 3) as defense in depth — but you should announce the abort *before* invoking it so the user sees a wizard-style message, not a stderr dump.
+
 ### Step 1: Vault Name
 
 Ask:
@@ -34,6 +55,13 @@ Ask:
 
 Accept any user-provided name. This becomes the folder name and the title in the agent config.
 
+**In-place override:** If mode is **in-place**, change the prompt to:
+
+> "What title should I use for this knowledge base in CLAUDE.md?"
+> Default: `<basename of cwd>` (e.g. `yettel`)
+
+The title is used only as the display name in the generated `CLAUDE.md`. It does not create a directory and is not transformed (no lowercasing, no title-casing).
+
 ### Step 2: Vault Location
 
 Ask:
@@ -41,6 +69,8 @@ Ask:
 > Default: `~/Documents/`
 
 Accept any absolute or relative path. Resolve `~` to the user's home directory. The final vault path is `{location}/{vault-name}/`.
+
+**In-place override:** Skip this step entirely. Set `VAULT_PATH=$(pwd)`.
 
 ### Step 3: Domain / Topic
 
@@ -61,6 +91,12 @@ Ask:
 > (a) Just this vault → writes `<vault>/.claude/settings.json` *(default)*
 > (b) All my projects → merges into `~/.claude/settings.json`
 > (c) Skip — I'll handle this manually
+
+**In-place hint:** If mode is **in-place**, after presenting the options add this nudge:
+
+> *"You're onboarding into an existing dir. If you plan to onboard multiple vaults (yettel, personal, etc.), `(b) All my projects` registers the plugin once for all of them. Default `(a)` still works — pick it per vault if you want fine-grained control."*
+
+The default stays `(a)`. The hint nudges; it does not change the default.
 
 ### Step 5: Optional CLI Tools
 
@@ -167,6 +203,10 @@ Show the user:
    - Drop a tree of `.md` files under `src/documentation/<system>/...` (structured docs from confluence, github-wiki, etc.)
 
    Then run `/second-brain:ingest`.
+
+**In-place override:** If mode was **in-place**, drop the "open the vault folder in Obsidian" instruction — `.obsidian/` proves Obsidian is already pointed at the vault. Replace it with:
+
+> *"Obsidian may need a manual refresh (File → Reload app) to see the new `wiki/`, `raw/`, `src/`, and `output/` folders."*
 
 ## Reference Files
 
