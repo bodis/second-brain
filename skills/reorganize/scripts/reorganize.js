@@ -418,6 +418,132 @@ function cmdValidateOrRevert(vault) {
   return process.exit(code || 1);
 }
 
+// ---------- candidates: shared helpers ----------
+
+// Per-page summary used by every kind:
+// { path, tags: Set<string>, outgoing: Set<string> (resolved vault-rel paths) }
+function summariseScope(vault, scope) {
+  const pages = [...walkMarkdown(vault, scope)];
+  // Build a bare-name → resolved-path map for outgoing-link resolution.
+  const bareIndex = new Map();
+  for (const rel of walkMarkdown(vault, 'wiki')) {
+    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
+  }
+  function resolveTarget(target) {
+    if (target.startsWith('wiki/')) {
+      return fs.existsSync(path.join(vault, target + '.md')) ? target + '.md' : null;
+    }
+    if (target.startsWith('src/documentation/')) {
+      return fs.existsSync(path.join(vault, target + '.md')) ? target + '.md' : null;
+    }
+    return bareIndex.get(target.toLowerCase()) || null;
+  }
+  const out = [];
+  for (const rel of pages) {
+    const abs = path.join(vault, rel);
+    let page;
+    try { page = readPage(abs); }
+    catch { continue; }
+    const tags = new Set(Array.isArray(page.frontmatter.tags) ? page.frontmatter.tags : []);
+    const outgoing = new Set();
+    const text = page.body;
+    let m;
+    WIKILINK_RE.lastIndex = 0;
+    while ((m = WIKILINK_RE.exec(text)) !== null) {
+      const target = m[1].trim();
+      const resolved = resolveTarget(target);
+      if (resolved && resolved !== rel) outgoing.add(resolved);
+    }
+    out.push({ path: rel, tags, outgoing });
+  }
+  return out;
+}
+
+function setIntersectionSize(a, b) {
+  let n = 0;
+  for (const x of a) if (b.has(x)) n++;
+  return n;
+}
+
+// ---------- candidates: merge ----------
+
+const MERGE_SHARED_WIKILINKS_THRESHOLD = 5;
+
+function candidatesMerge(vault, scope) {
+  const pages = summariseScope(vault, scope);
+  const pairs = [];
+  for (let i = 0; i < pages.length; i++) {
+    for (let j = i + 1; j < pages.length; j++) {
+      const a = pages[i], b = pages[j];
+      const shared = setIntersectionSize(a.outgoing, b.outgoing);
+      if (shared < MERGE_SHARED_WIKILINKS_THRESHOLD) continue;
+      const sharedTags = setIntersectionSize(a.tags, b.tags);
+      pairs.push({
+        a: a.path,
+        b: b.path,
+        shared_wikilinks: shared,
+        shared_tags: sharedTags,
+      });
+    }
+  }
+  pairs.sort((x, y) => y.shared_wikilinks - x.shared_wikilinks);
+  return { pairs };
+}
+
+// ---------- candidates: parent ----------
+
+const PARENT_PAIR_THRESHOLD = 3;
+const PARENT_MIN_MEMBERS = 3;
+
+function candidatesParent(vault, scope) {
+  const pages = summariseScope(vault, scope);
+  // Group by tag (each page can be in multiple tag groups).
+  const byTag = new Map();
+  for (const p of pages) {
+    for (const tag of p.tags) {
+      if (!byTag.has(tag)) byTag.set(tag, []);
+      byTag.get(tag).push(p);
+    }
+  }
+  const clusters = [];
+  for (const [tag, members] of byTag) {
+    if (members.length < PARENT_MIN_MEMBERS) continue;
+    // All-pairs check: every pair must hit the threshold.
+    let allOk = true;
+    let totalShared = 0;
+    for (let i = 0; i < members.length && allOk; i++) {
+      for (let j = i + 1; j < members.length && allOk; j++) {
+        const shared = setIntersectionSize(members[i].outgoing, members[j].outgoing);
+        if (shared < PARENT_PAIR_THRESHOLD) { allOk = false; break; }
+        totalShared += shared;
+      }
+    }
+    if (!allOk) continue;
+    clusters.push({
+      members: members.map(m => m.path),
+      shared_wikilinks: totalShared,
+      shared_tag: tag,
+    });
+  }
+  clusters.sort((x, y) => y.shared_wikilinks - x.shared_wikilinks);
+  return { clusters };
+}
+
+// ---------- candidates dispatcher ----------
+
+function cmdCandidates(vault, args) {
+  if (!args.kind) die('--kind is required', 1);
+  if (args.json !== true) die('--json is required (machine-only output)', 1);
+  const scope = args.scope || 'wiki';
+  if (!scope.startsWith('wiki')) die(`--scope must be inside wiki/, got ${scope}`, 3);
+
+  let result;
+  if (args.kind === 'merge')        result = candidatesMerge(vault, scope);
+  else if (args.kind === 'parent')  result = candidatesParent(vault, scope);
+  else die(`unknown --kind: ${args.kind}`, 1);   // recategorize/cover/relations land in later tasks
+  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -474,7 +600,7 @@ function main() {
   const { cmd, args } = parseArgs(process.argv.slice(2));
   const vault = findVaultRoot(process.cwd());
   if (cmd === 'begin') return cmdBegin(vault);
-  if (cmd === 'candidates') return die('candidates: not implemented yet', 1);
+  if (cmd === 'candidates') return cmdCandidates(vault, args);
   if (cmd === 'move-page') return cmdMovePage(vault, args);
   if (cmd === 'merge-page') return cmdMergePage(vault, args);
   if (cmd === 'mark-covered') return cmdMarkCovered(vault, args);

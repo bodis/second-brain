@@ -672,6 +672,91 @@ case "$LAST" in
   *)       echo "  FAIL: top commit is '$LAST'" && FAIL=$((FAIL+1)) ;;
 esac
 
+# Test 14: candidates --kind merge returns pairs[] sorted by shared_wikilinks.
+echo ""
+echo "Test 14: candidates --kind merge"
+V=$(make_vault cand-merge)
+cat > "$V/wiki/concepts/alpha.md" <<'MEOF'
+---
+tags: [ai-safety]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# Alpha
+
+[[shared-a]] [[shared-b]] [[shared-c]] [[shared-d]] [[shared-e]]
+MEOF
+cat > "$V/wiki/concepts/beta.md" <<'MEOF'
+---
+tags: [ai-safety]
+sources: [raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# Beta
+
+[[shared-a]] [[shared-b]] [[shared-c]] [[shared-d]] [[shared-e]] [[unique]]
+MEOF
+# Five dummy target pages so the wikilinks resolve and count.
+for s in shared-a shared-b shared-c shared-d shared-e unique; do
+  cat > "$V/wiki/concepts/$s.md" <<EOF
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# $s
+EOF
+done
+(cd "$V" && git add . && git commit -qm "setup")
+
+OUT=$( (cd "$V" && node "$SCRIPT" candidates --kind merge --json) )
+PAIR_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).pairs.length)))")
+# alpha/beta share five wikilinks above the threshold → 1 pair surfaced.
+[ "$PAIR_COUNT" -ge 1 ] && echo "  PASS: at least one pair returned ($PAIR_COUNT)" && PASS=$((PASS+1)) \
+                        || (echo "  FAIL: expected ≥1 pair, got $PAIR_COUNT"; FAIL=$((FAIL+1)))
+SHARED=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).pairs[0].shared_wikilinks)))")
+assert_eq "top pair shared_wikilinks ≥ 5"   "5" "$SHARED"
+
+# Test 15: candidates --kind parent groups ≥3 pages with a shared tag and overlapping links.
+echo ""
+echo "Test 15: candidates --kind parent"
+V=$(make_vault cand-parent)
+for n in p1 p2 p3; do
+  cat > "$V/wiki/concepts/$n.md" <<EOF
+---
+tags: [programming-languages]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# $n
+
+[[shared-a]] [[shared-b]] [[shared-c]]
+EOF
+done
+for s in shared-a shared-b shared-c; do
+  cat > "$V/wiki/concepts/$s.md" <<EOF
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# $s
+EOF
+done
+(cd "$V" && git add . && git commit -qm "setup")
+OUT=$( (cd "$V" && node "$SCRIPT" candidates --kind parent --json) )
+CL_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).clusters.length)))")
+[ "$CL_COUNT" -ge 1 ] && echo "  PASS: at least one cluster ($CL_COUNT)" && PASS=$((PASS+1)) \
+                      || (echo "  FAIL: expected ≥1 cluster, got $CL_COUNT"; FAIL=$((FAIL+1)))
+M_COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).clusters[0].members.length)))")
+[ "$M_COUNT" -ge 3 ] && echo "  PASS: cluster has 3+ members ($M_COUNT)" && PASS=$((PASS+1)) \
+                     || (echo "  FAIL: cluster has $M_COUNT members"; FAIL=$((FAIL+1)))
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
