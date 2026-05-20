@@ -135,6 +135,17 @@ set -e
 assert_eq "bad-date exit code 2" "2" "$RC"
 assert_eq "errors[0].key is updated" "updated" "$(echo "$OUT" | jq_get errors.0.key)"
 
+# Test 6b: overflow date → exit 2, errors[0].key === 'updated'.
+echo ""
+echo "Test 6b: frontmatter overflow date (regression for js-yaml Date rollover)"
+V=$(prepare_vault frontmatter-overflow-date)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "overflow-date exit code 2" "2" "$RC"
+assert_eq "overflow errors[0].key is updated" "updated" "$(echo "$OUT" | jq_get errors.0.key)"
+
 # Test 7: human-readable summary on stderr when --json absent.
 echo ""
 echo "Test 7: frontmatter human summary on stderr"

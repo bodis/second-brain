@@ -82,7 +82,12 @@ function* walkMarkdown(vault, subdir) {
 }
 
 // Read the first ---fenced YAML block at the top of a markdown file.
-// Returns { ok: true, data, raw } on parse, { ok: false, problem } on error.
+// Returns { ok: true, data } on parse, { ok: false, problem } on error.
+//
+// We load with CORE_SCHEMA so YAML timestamps stay as plain strings. The default
+// schema parses `2026-05-20` into a JS Date, which silently rolls over invalid
+// values (e.g. `2026-13-45` becomes `2027-02-14`), and the validator would then
+// never see the bogus source text. CORE_SCHEMA keeps booleans/ints/floats native.
 function readFrontmatter(absPath) {
   let text;
   try { text = fs.readFileSync(absPath, 'utf8'); }
@@ -91,12 +96,12 @@ function readFrontmatter(absPath) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!m) return { ok: false, problem: 'no frontmatter block (expected leading `---` fence)' };
   let data;
-  try { data = yaml.load(m[1]); }
+  try { data = yaml.load(m[1], { schema: yaml.CORE_SCHEMA }); }
   catch (err) { return { ok: false, problem: `yaml parse error: ${err.message}` }; }
   if (data === null || typeof data !== 'object') {
     return { ok: false, problem: 'frontmatter is not a mapping' };
   }
-  return { ok: true, data, raw: m[1] };
+  return { ok: true, data };
 }
 
 function loadContract(vault) {
@@ -135,7 +140,23 @@ function expandTargets(vault, contract) {
   return out;
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// Strict YYYY-MM-DD check: must match the literal pattern AND the components
+// must form a real calendar date (no month=13, no day=45, leap-year aware).
+// We round-trip through Date and compare the parts to reject rollovers.
+function isValidDateString(s) {
+  if (typeof s !== 'string') return false;
+  const m = s.match(DATE_RE);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year
+    && d.getUTCMonth() === month - 1
+    && d.getUTCDate() === day;
+}
 
 function validateKey(value, spec) {
   if (spec.type === 'list[string]') {
@@ -145,13 +166,10 @@ function validateKey(value, spec) {
     return null;
   }
   if (spec.type === 'date') {
-    // js-yaml parses YAML-native dates into Date objects. The contract requires
-    // the source text to be YYYY-MM-DD, so re-render and re-check.
-    if (value instanceof Date) {
-      const iso = value.toISOString().slice(0, 10);
-      return DATE_RE.test(iso) ? null : `date does not match ${spec.format || 'YYYY-MM-DD'}`;
-    }
-    if (typeof value === 'string' && DATE_RE.test(value)) return null;
+    // readFrontmatter uses CORE_SCHEMA, so YAML dates stay as plain strings.
+    // The contract requires the literal source text to be YYYY-MM-DD AND
+    // a real calendar date — `2026-13-45` matches the shape but is invalid.
+    if (isValidDateString(value)) return null;
     return `expected ${spec.format || 'YYYY-MM-DD'} date`;
   }
   return `unknown contract type: ${spec.type}`;
