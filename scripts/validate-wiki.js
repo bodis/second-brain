@@ -172,6 +172,17 @@ function validateKey(value, spec) {
     if (isValidDateString(value)) return null;
     return `expected ${spec.format || 'YYYY-MM-DD'} date`;
   }
+  if (spec.type === 'map[string,list[string]]') {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return 'expected a map of string keys to lists of strings';
+    }
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof k !== 'string') return `relation name '${k}' must be a string`;
+      if (!Array.isArray(v)) return `relation '${k}' must be a list of strings`;
+      if (!v.every(x => typeof x === 'string')) return `relation '${k}' has non-string entries`;
+    }
+    return null;
+  }
   return `unknown contract type: ${spec.type}`;
 }
 
@@ -305,6 +316,11 @@ function runFrontmatter(vault, json, quiet = false) {
         errors.push({ path: rel, key, problem: `missing required key '${key}'` });
         continue;
       }
+      const problem = validateKey(fm.data[key], spec);
+      if (problem) errors.push({ path: rel, key, problem });
+    }
+    for (const [key, spec] of Object.entries(contract.optional || {})) {
+      if (!(key in fm.data)) continue;  // optional — skip if absent
       const problem = validateKey(fm.data[key], spec);
       if (problem) errors.push({ path: rel, key, problem });
     }

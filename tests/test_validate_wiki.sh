@@ -321,6 +321,32 @@ set -e
 assert_eq "all worst-code exit 2" "2" "$RC"
 assert_eq "all frontmatter errors > 0" "1" "$(echo "$OUT" | jq_get frontmatter.errors.length)"
 
+# Test: frontmatter accepts a valid relations: map (CR-005)
+echo ""
+echo "Test: relations-valid fixture passes frontmatter check"
+V=$(prepare_vault relations-valid)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "relations-valid frontmatter exit code"  "0" "$RC"
+ERR_COUNT=$(echo "$OUT" | jq_get "errors.length")
+assert_eq "relations-valid: 0 errors"              "0" "$ERR_COUNT"
+
+# Test: frontmatter rejects a malformed relations: map (CR-005)
+echo ""
+echo "Test: relations-bad-shape fixture fails frontmatter check"
+V=$(prepare_vault relations-bad-shape)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "relations-bad-shape frontmatter exit code"  "2" "$RC"
+ERR_COUNT=$(echo "$OUT" | jq_get "errors.length")
+assert_eq "relations-bad-shape: 1 error"               "1" "$ERR_COUNT"
+ERR_KEY=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).errors[0].key))")
+assert_eq "relations-bad-shape: error key is 'relations'"  "relations" "$ERR_KEY"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

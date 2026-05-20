@@ -55,6 +55,9 @@ required:
   updated:
     type: date
     format: YYYY-MM-DD
+optional:
+  relations:
+    type: map[string,list[string]]
 unknown_keys: allowed
 EOF
   echo "Created wiki/.state/frontmatter-contract.yaml" >&2
