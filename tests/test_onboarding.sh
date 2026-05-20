@@ -96,27 +96,38 @@ assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "relations:"
 
 echo ""
 
-# Test 4: Idempotent — running again doesn't overwrite existing files
-# temporary: Test 4 is removed in Task 3 of CR-006. The re-run now exits 3 due
-# to the orphan-scaffold guard (no .obsidian/ in $TEST_VAULT), so we bracket
-# the invocation with set +e / set -e to let the suite continue.
-echo "Test 4: Idempotency"
-echo "# Custom content" >> "$TEST_VAULT/wiki/index.md"
-set +e
-bash "$ONBOARDING" "$TEST_VAULT" 2>/dev/null
-set -e
-assert_contains "$TEST_VAULT/wiki/index.md" "# Custom content"
+# Test 4: In-place happy path — .obsidian/ exists, wiki/ does not (spec §4.1 row 2)
+echo "Test 4: In-place happy path"
+INPLACE_VAULT="$TEST_DIR/inplace-vault"
+mkdir -p "$INPLACE_VAULT/.obsidian"
+# Drop a sentinel file so we can prove .obsidian/ is not touched.
+echo "sentinel" > "$INPLACE_VAULT/.obsidian/marker.txt"
+bash "$ONBOARDING" "$INPLACE_VAULT" 2>/dev/null
+
+assert_dir "$INPLACE_VAULT/raw"
+assert_dir "$INPLACE_VAULT/raw/assets"
+assert_dir "$INPLACE_VAULT/wiki"
+assert_dir "$INPLACE_VAULT/wiki/sources"
+assert_dir "$INPLACE_VAULT/wiki/entities"
+assert_dir "$INPLACE_VAULT/wiki/concepts"
+assert_dir "$INPLACE_VAULT/wiki/synthesis"
+assert_dir "$INPLACE_VAULT/output"
+assert_dir "$INPLACE_VAULT/src/documentation"
+assert_file "$INPLACE_VAULT/wiki/index.md"
+assert_file "$INPLACE_VAULT/wiki/log.md"
+assert_file "$INPLACE_VAULT/wiki/.state/frontmatter-contract.yaml"
+
+# .obsidian/ must be untouched
+assert_dir "$INPLACE_VAULT/.obsidian"
+assert_file "$INPLACE_VAULT/.obsidian/marker.txt"
+assert_contains "$INPLACE_VAULT/.obsidian/marker.txt" "sentinel"
 
 echo ""
 
-# Test 5: Script outputs valid JSON
-# temporary: Test 5 also re-runs on $TEST_VAULT which now lacks .obsidian/, so
-# the orphan-scaffold guard makes this exit non-zero. Bracket with set +e/-e
-# so the suite reaches Test 6 and Test 7. Removed alongside Test 4 in Task 3.
+# Test 5: Script outputs valid JSON (greenfield mode, fresh vault)
 echo "Test 5: JSON output"
-set +e
-OUTPUT=$(bash "$ONBOARDING" "$TEST_VAULT" 2>/dev/null)
-set -e
+JSON_VAULT="$TEST_DIR/json-vault"
+OUTPUT=$(bash "$ONBOARDING" "$JSON_VAULT" 2>/dev/null)
 if echo "$OUTPUT" | python3 -m json.tool > /dev/null 2>&1; then
   echo "  PASS: output is valid JSON"
   PASS=$((PASS + 1))
