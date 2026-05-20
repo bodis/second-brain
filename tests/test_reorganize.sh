@@ -876,6 +876,142 @@ OCC=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process
 SUGG=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).pages[0].outgoing_pattern[0].suggested_relation))")
 assert_eq "suggested_relation"  "defined-by" "$SUGG"
 
+# Test 19: End-to-end. Three concept pages → merge two → mark third covered →
+# assert filesystem, link state, index state, and commit log.
+echo ""
+echo "Test 19: end-to-end Propose/Apply walkthrough"
+V=$(make_vault e2e)
+cat > "$V/wiki/concepts/a.md" <<'MEOF'
+---
+tags: [demo]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# A
+
+Body content paragraph one.
+Body content paragraph two.
+Body content paragraph three.
+MEOF
+cat > "$V/wiki/concepts/b.md" <<'MEOF'
+---
+tags: [demo]
+sources: [raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# B
+
+Body content paragraph one.
+Body content paragraph two.
+Body content paragraph three.
+MEOF
+cat > "$V/wiki/synthesis/big.md" <<'MEOF'
+---
+tags: [demo]
+sources: [raw/x.md, raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# Big
+
+Synthesis page covering the topic.
+MEOF
+cat > "$V/wiki/sources/old.md" <<'MEOF'
+---
+tags: [demo]
+sources: [raw/x.md]
+created: 2026-04-01
+updated: 2026-04-01
+---
+
+# Old
+
+Some original summary content here.
+MEOF
+cat > "$V/wiki/index.md" <<'IEOF'
+# Index
+
+## Sources
+
+- [[wiki/sources/old]] — older summary
+
+## Entities
+
+## Concepts
+
+- [[wiki/concepts/a]]
+- [[wiki/concepts/b]] — survivor
+
+## Synthesis
+
+- [[wiki/synthesis/big]]
+IEOF
+(cd "$V" && git add . && git commit -qm "setup")
+BASELINE_CT=$(commit_count "$V")
+BASELINE_SHA=$( (cd "$V" && node "$SCRIPT" begin) )
+[ -n "$BASELINE_SHA" ] && echo "  PASS: baseline SHA reported" && PASS=$((PASS+1)) \
+                       || (echo "  FAIL: no baseline SHA"; FAIL=$((FAIL+1)))
+
+# Move 1: merge a into b.
+MERGED=$(mktemp)
+cat > "$MERGED" <<'BEOF'
+# B
+
+Body content paragraph one.
+Body content paragraph two.
+Body content paragraph three.
+Body content paragraph four (merged in).
+BEOF
+(cd "$V" && node "$SCRIPT" merge-page --from wiki/concepts/a.md --into wiki/concepts/b.md --merged-body "$MERGED") >/dev/null
+set +e
+(cd "$V" && node "$SCRIPT" validate-or-revert) >/dev/null 2>&1
+RC=$?
+set -e
+assert_eq "validate-or-revert after merge exits 0/1"  "0" "$RC"
+rm -f "$MERGED"
+
+# Move 2: mark old as covered by big.
+(cd "$V" && node "$SCRIPT" mark-covered --page wiki/sources/old.md --by wiki/synthesis/big) >/dev/null
+set +e
+(cd "$V" && node "$SCRIPT" validate-or-revert) >/dev/null 2>&1
+RC=$?
+set -e
+assert_eq "validate-or-revert after mark exits 0/1"   "0" "$RC"
+
+# Filesystem assertions.
+[ ! -f "$V/wiki/concepts/a.md" ] && echo "  PASS: a.md absorbed" && PASS=$((PASS+1)) || (echo "  FAIL: a.md still present"; FAIL=$((FAIL+1)))
+[ -f "$V/wiki/concepts/b.md" ]   && echo "  PASS: b.md survived" && PASS=$((PASS+1)) || (echo "  FAIL: b.md missing"; FAIL=$((FAIL+1)))
+grep -q "Covered by \[\[wiki/synthesis/big\]\]" "$V/wiki/sources/old.md" \
+  && echo "  PASS: old.md has covered-by block" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: covered-by block missing"; FAIL=$((FAIL+1)))
+
+# Index assertions.
+IDX=$(cat "$V/wiki/index.md")
+echo "$IDX" | grep -q "wiki/concepts/a\]\]" && (echo "  FAIL: a still in index" ; FAIL=$((FAIL+1))) || (echo "  PASS: a dropped from index" && PASS=$((PASS+1)))
+echo "$IDX" | grep -q "wiki/concepts/b\]\] — survivor" && echo "  PASS: b survivor row kept" && PASS=$((PASS+1)) || (echo "  FAIL: b survivor row lost"; FAIL=$((FAIL+1)))
+
+# Commit log assertions.
+COMMITS_AFTER=$(commit_count "$V")
+[ "$COMMITS_AFTER" -ge "$((BASELINE_CT + 2))" ] && echo "  PASS: ≥2 reorganize commits ($COMMITS_AFTER from $BASELINE_CT)" && PASS=$((PASS+1)) \
+                                                || (echo "  FAIL: expected ≥2 new commits, got $((COMMITS_AFTER - BASELINE_CT))"; FAIL=$((FAIL+1)))
+LOG=$( (cd "$V" && git log --pretty=%s | head -10) )
+echo "$LOG" | grep -q "merge wiki/concepts/a.md into wiki/concepts/b.md" \
+  && echo "  PASS: merge commit present" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: merge commit missing"; FAIL=$((FAIL+1)))
+echo "$LOG" | grep -q "mark wiki/sources/old.md covered by wiki/synthesis/big" \
+  && echo "  PASS: mark commit present" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: mark commit missing"; FAIL=$((FAIL+1)))
+
+# Baseline escape hatch still works: git reset --hard to BASELINE_SHA restores the vault.
+(cd "$V" && git reset --hard "$BASELINE_SHA") >/dev/null
+[ -f "$V/wiki/concepts/a.md" ] && echo "  PASS: baseline reset restored a.md" && PASS=$((PASS+1)) \
+                               || (echo "  FAIL: baseline reset did not restore a.md"; FAIL=$((FAIL+1)))
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
