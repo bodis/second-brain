@@ -446,6 +446,92 @@ echo "$BY" | grep -q "updated: 2026-05-01" \
   && echo "  PASS: by target untouched" && PASS=$((PASS+1)) \
   || (echo "  FAIL: by target was modified"; FAIL=$((FAIL+1)))
 
+# Test 9: parent-create writes parent file, appends Children, adds index row.
+echo ""
+echo "Test 9: parent-create happy path"
+V=$(make_vault parent)
+cat > "$V/wiki/concepts/p1.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# p1
+MEOF
+cat > "$V/wiki/concepts/p2.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# p2
+MEOF
+cat > "$V/wiki/concepts/p3.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# p3
+MEOF
+cat > "$V/wiki/index.md" <<'IEOF'
+# Index
+
+## Sources
+
+## Entities
+
+## Concepts
+
+- [[wiki/concepts/p1]]
+- [[wiki/concepts/p2]]
+- [[wiki/concepts/p3]]
+
+## Synthesis
+IEOF
+(cd "$V" && git add . && git commit -qm "setup")
+BODY=$(mktemp)
+cat > "$BODY" <<'PEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-20
+updated: 2026-05-20
+---
+
+# Programming Languages
+
+Parent concept covering p1, p2, p3.
+PEOF
+BEFORE_CT=$(commit_count "$V")
+OUT=$( (cd "$V" && node "$SCRIPT" parent-create --page wiki/concepts/programming-languages.md --body "$BODY" --children "wiki/concepts/p1,wiki/concepts/p2,wiki/concepts/p3") )
+AFTER_CT=$(commit_count "$V")
+assert_eq "one new commit"             "$((BEFORE_CT + 1))" "$AFTER_CT"
+assert_eq "commit msg names parent"    "reorganize: introduce parent wiki/concepts/programming-languages.md" "$(last_msg "$V")"
+# Parent file written with `## Children` section listing all three children.
+PAR=$(cat "$V/wiki/concepts/programming-languages.md")
+echo "$PAR" | grep -q "## Children"                        && echo "  PASS: ## Children section present" && PASS=$((PASS+1)) \
+                                                            || (echo "  FAIL: ## Children section missing"; FAIL=$((FAIL+1)))
+echo "$PAR" | grep -q '\[\[wiki/concepts/p1\]\]'           && echo "  PASS: child p1 listed" && PASS=$((PASS+1)) || (echo "  FAIL: p1 missing"; FAIL=$((FAIL+1)))
+echo "$PAR" | grep -q '\[\[wiki/concepts/p2\]\]'           && echo "  PASS: child p2 listed" && PASS=$((PASS+1)) || (echo "  FAIL: p2 missing"; FAIL=$((FAIL+1)))
+echo "$PAR" | grep -q '\[\[wiki/concepts/p3\]\]'           && echo "  PASS: child p3 listed" && PASS=$((PASS+1)) || (echo "  FAIL: p3 missing"; FAIL=$((FAIL+1)))
+# Index gained a row under `## Concepts`.
+IDX=$(cat "$V/wiki/index.md")
+echo "$IDX" | grep -q 'wiki/concepts/programming-languages' \
+  && echo "  PASS: index row added" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: index row missing"; FAIL=$((FAIL+1)))
+# Children files untouched (no `updated:` bump).
+for c in p1 p2 p3; do
+  CONT=$(cat "$V/wiki/concepts/$c.md")
+  echo "$CONT" | grep -q "updated: 2026-05-01" \
+    && echo "  PASS: child $c untouched" && PASS=$((PASS+1)) \
+    || (echo "  FAIL: child $c modified"; FAIL=$((FAIL+1)))
+done
+rm -f "$BODY"
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

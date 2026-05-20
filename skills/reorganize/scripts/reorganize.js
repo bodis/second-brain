@@ -314,6 +314,64 @@ function cmdMarkCovered(vault, args) {
   git(['commit', '-m', `reorganize: mark ${args.page} covered by ${args.by}`], vault);
 }
 
+// Map a wiki-path prefix to the index section header it belongs under.
+function indexSectionFor(vaultPath) {
+  if (vaultPath.startsWith('wiki/sources/'))    return '## Sources';
+  if (vaultPath.startsWith('wiki/entities/'))   return '## Entities';
+  if (vaultPath.startsWith('wiki/concepts/'))   return '## Concepts';
+  if (vaultPath.startsWith('wiki/synthesis/'))  return '## Synthesis';
+  return null;
+}
+
+// Append a row line to wiki/index.md under the section matching `header`.
+// The row is inserted immediately after the section header (and any blank
+// line that follows it), before the next section header or end-of-file.
+function indexAppendRow(vault, header, row) {
+  const idxPath = path.join(vault, 'wiki', 'index.md');
+  if (!fs.existsSync(idxPath)) die(`wiki/index.md missing`, 2);
+  const lines = fs.readFileSync(idxPath, 'utf8').split(/\r?\n/);
+  const start = lines.findIndex(l => l.trim() === header);
+  if (start === -1) die(`index missing section ${header}`, 2);
+  // Find the end of this section: next `## ` header or end-of-file.
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i])) { end = i; break; }
+  }
+  // Insert just before the section's end; keep one blank line between the
+  // section's last row (if any) and the next header.
+  let insertAt = end;
+  while (insertAt > start + 1 && lines[insertAt - 1].trim() === '') insertAt--;
+  lines.splice(insertAt, 0, row);
+  fs.writeFileSync(idxPath, lines.join('\n'));
+}
+
+function cmdParentCreate(vault, args) {
+  requireWikiPath('--page', args.page);
+  if (!args.body) die('--body is required', 1);
+  if (!args.children) die('--children is required', 1);
+  const abs = path.join(vault, args.page);
+  if (fs.existsSync(abs)) die(`--page already exists: ${args.page}`, 3);
+  if (!fs.existsSync(args.body)) die(`--body file does not exist: ${args.body}`, 3);
+
+  const children = args.children.split(',').map(s => s.trim()).filter(Boolean);
+  for (const c of children) requireWikiPath('--children entry', c);
+
+  // Read provided body, append `## Children`.
+  const bodyText = fs.readFileSync(args.body, 'utf8');
+  const childrenSection = `\n## Children\n\n` +
+    children.map(c => `- [[${c}]]`).join('\n') + '\n';
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, bodyText.endsWith('\n') ? bodyText + childrenSection : bodyText + '\n' + childrenSection);
+
+  // Add an index row under the matching section.
+  const section = indexSectionFor(args.page);
+  if (!section) die(`cannot derive index section from ${args.page}`, 3);
+  indexAppendRow(vault, section, `- [[${stripMd(args.page)}]]`);
+
+  git(['add', '--', 'wiki/'], vault);
+  git(['commit', '-m', `reorganize: introduce parent ${args.page}`], vault);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -374,7 +432,7 @@ function main() {
   if (cmd === 'move-page') return cmdMovePage(vault, args);
   if (cmd === 'merge-page') return cmdMergePage(vault, args);
   if (cmd === 'mark-covered') return cmdMarkCovered(vault, args);
-  if (cmd === 'parent-create') return die('parent-create: not implemented yet', 1);
+  if (cmd === 'parent-create') return cmdParentCreate(vault, args);
   if (cmd === 'relations-add') return die('relations-add: not implemented yet', 1);
   if (cmd === 'validate-or-revert') return die('validate-or-revert: not implemented yet', 1);
   die(`unknown subcommand: ${cmd}`);
