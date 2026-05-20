@@ -392,6 +392,60 @@ echo "$ERR" | grep -q "merged body suspiciously short" \
                                || (echo "  FAIL: from page got deleted despite refusal"; FAIL=$((FAIL+1)))
 rm -f "$SHORT"
 
+# Test 8: mark-covered appends a covered-by block, bumps updated, makes one commit.
+echo ""
+echo "Test 8: mark-covered happy path"
+V=$(make_vault mark)
+cat > "$V/wiki/sources/old-summary.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-04-01
+updated: 2026-04-01
+---
+
+# Old Summary
+
+Original body of the summary.
+MEOF
+cat > "$V/wiki/synthesis/big-idea.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md, raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# Big Idea
+
+The synthesis page covering the topic.
+MEOF
+(cd "$V" && git add . && git commit -qm "setup")
+BEFORE_CT=$(commit_count "$V")
+OUT=$( (cd "$V" && node "$SCRIPT" mark-covered --page wiki/sources/old-summary.md --by wiki/synthesis/big-idea) )
+AFTER_CT=$(commit_count "$V")
+assert_eq "one new commit"            "$((BEFORE_CT + 1))" "$AFTER_CT"
+assert_eq "commit msg names mark"     "reorganize: mark wiki/sources/old-summary.md covered by wiki/synthesis/big-idea" "$(last_msg "$V")"
+# Block appended to the page.
+OLD=$(cat "$V/wiki/sources/old-summary.md")
+echo "$OLD" | grep -q '> \*\*Covered by \[\[wiki/synthesis/big-idea\]\]\*\*' \
+  && echo "  PASS: covered-by block appended" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: covered-by block missing"; FAIL=$((FAIL+1)))
+# Original body preserved.
+echo "$OLD" | grep -q "Original body of the summary" \
+  && echo "  PASS: original body preserved" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: original body changed"; FAIL=$((FAIL+1)))
+# `updated:` bumped.
+TODAY=$(date -u +%Y-%m-%d)
+echo "$OLD" | grep -q "updated: $TODAY" \
+  && echo "  PASS: updated date bumped" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: updated date not bumped"; FAIL=$((FAIL+1)))
+# `by` target file untouched.
+BY=$(cat "$V/wiki/synthesis/big-idea.md")
+echo "$BY" | grep -q "updated: 2026-05-01" \
+  && echo "  PASS: by target untouched" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: by target was modified"; FAIL=$((FAIL+1)))
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

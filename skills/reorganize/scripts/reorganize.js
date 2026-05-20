@@ -297,6 +297,23 @@ function cmdMergePage(vault, args) {
   git(['commit', '-m', `reorganize: merge ${args.from} into ${args.into}`], vault);
 }
 
+function cmdMarkCovered(vault, args) {
+  requireWikiPath('--page', args.page);
+  if (!args.by) die('--by is required', 1);
+  requireWikiPath('--by', args.by);
+  const abs = path.join(vault, args.page);
+  if (!fs.existsSync(abs)) die(`--page does not exist: ${args.page}`, 3);
+
+  const page = readPage(abs);
+  page.frontmatter.updated = todayUtc();
+  const note = `\n> **Covered by [[${args.by}]]** — see that page for current synthesis.\n`;
+  page.body = page.body.endsWith('\n') ? page.body + note : page.body + '\n' + note;
+  writePage(abs, page);
+
+  git(['add', '--', 'wiki/'], vault);
+  git(['commit', '-m', `reorganize: mark ${args.page} covered by ${args.by}`], vault);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -356,7 +373,7 @@ function main() {
   if (cmd === 'candidates') return die('candidates: not implemented yet', 1);
   if (cmd === 'move-page') return cmdMovePage(vault, args);
   if (cmd === 'merge-page') return cmdMergePage(vault, args);
-  if (cmd === 'mark-covered') return die('mark-covered: not implemented yet', 1);
+  if (cmd === 'mark-covered') return cmdMarkCovered(vault, args);
   if (cmd === 'parent-create') return die('parent-create: not implemented yet', 1);
   if (cmd === 'relations-add') return die('relations-add: not implemented yet', 1);
   if (cmd === 'validate-or-revert') return die('validate-or-revert: not implemented yet', 1);
