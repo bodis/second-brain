@@ -28,6 +28,40 @@ if [ ! -f "$VAULT_ROOT/wiki/.state/.gitkeep" ]; then
   : > "$VAULT_ROOT/wiki/.state/.gitkeep"
 fi
 
+# CR-004: scaffold the frontmatter contract. Versioned; scripts/validate-wiki.js
+# treats it as authoritative for which keys are required on which paths.
+if [ ! -f "$VAULT_ROOT/wiki/.state/frontmatter-contract.yaml" ]; then
+  cat > "$VAULT_ROOT/wiki/.state/frontmatter-contract.yaml" << 'EOF'
+schema_version: 1
+generated_by: scripts/validate-wiki.js
+targets:
+  - wiki/sources/**/*.md
+  - wiki/entities/**/*.md
+  - wiki/concepts/**/*.md
+  - wiki/synthesis/**/*.md
+exempt:
+  - wiki/index.md
+  - wiki/log.md
+required:
+  tags:
+    type: list[string]
+    may_be_empty: true
+  sources:
+    type: list[string]
+    may_be_empty: false
+  created:
+    type: date
+    format: YYYY-MM-DD
+  updated:
+    type: date
+    format: YYYY-MM-DD
+unknown_keys: allowed
+EOF
+  echo "Created wiki/.state/frontmatter-contract.yaml" >&2
+else
+  echo "wiki/.state/frontmatter-contract.yaml already exists, skipping" >&2
+fi
+
 # CR-003: src/documentation/ must exist as a tracked-but-empty directory from
 # day one so the first structured ingest doesn't have to create the tree.
 if [ ! -f "$VAULT_ROOT/src/documentation/.gitkeep" ]; then
@@ -120,7 +154,8 @@ cat << JSONEOF
   ],
   "files": [
     "wiki/index.md",
-    "wiki/log.md"
+    "wiki/log.md",
+    "wiki/.state/frontmatter-contract.yaml"
   ],
   "tools": $TOOLS_JSON
 }

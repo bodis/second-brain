@@ -88,6 +88,8 @@ Before writing anything, share the 3-5 most important takeaways from the source.
 
 Create a new file in `wiki/sources/` named after the source (slugified). Include:
 
+The frontmatter contract (`wiki/.state/frontmatter-contract.yaml`, owned by `scripts/validate-wiki.js`) is the source of truth for required keys; the example below is illustrative.
+
     ---
     tags: [relevant, tags]
     sources: [original-filename.md]

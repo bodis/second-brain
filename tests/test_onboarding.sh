@@ -85,6 +85,15 @@ assert_contains "$TEST_VAULT/wiki/log.md" "# Log"
 
 echo ""
 
+# Test 3.5: frontmatter contract scaffolded (CR-004)
+echo "Test 3.5: wiki/.state/frontmatter-contract.yaml"
+assert_file "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml"
+assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "schema_version: 1"
+assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "generated_by: scripts/validate-wiki.js"
+assert_contains "$TEST_VAULT/wiki/.state/frontmatter-contract.yaml" "sources:"
+
+echo ""
+
 # Test 4: Idempotent — running again doesn't overwrite existing files
 echo "Test 4: Idempotency"
 echo "# Custom content" >> "$TEST_VAULT/wiki/index.md"
