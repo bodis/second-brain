@@ -238,6 +238,65 @@ function cmdMovePage(vault, args) {
   git(['commit', '-m', `reorganize: move ${args.from} → ${args.to}`], vault);
 }
 
+// Drop any row in wiki/index.md whose wikilink target matches `target` (a
+// stripped vault path). Used by merge-page to delete the absorbed page's row
+// while leaving the survivor's row untouched.
+function indexDropRow(vault, target) {
+  const idxPath = path.join(vault, 'wiki', 'index.md');
+  if (!fs.existsSync(idxPath)) return;
+  const lines = fs.readFileSync(idxPath, 'utf8').split(/\r?\n/);
+  const re = new RegExp(`\\[\\[${escapeRegex(target)}(\\|[^\\]]*)?\\]\\]`);
+  const kept = lines.filter(line => !re.test(line));
+  if (kept.length !== lines.length) {
+    fs.writeFileSync(idxPath, kept.join('\n'));
+  }
+}
+
+function cmdMergePage(vault, args) {
+  requireWikiPath('--from', args.from);
+  requireWikiPath('--into', args.into);
+  if (!args['merged-body']) die('--merged-body is required', 1);
+  const fromAbs = path.join(vault, args.from);
+  const intoAbs = path.join(vault, args.into);
+  if (!fs.existsSync(fromAbs)) die(`--from does not exist: ${args.from}`, 3);
+  if (!fs.existsSync(intoAbs)) die(`--into does not exist: ${args.into}`, 3);
+  const tmp = args['merged-body'];
+  if (!fs.existsSync(tmp)) die(`--merged-body file does not exist: ${tmp}`, 3);
+
+  // Body-length sanity. Compare body lengths (not whole files) so frontmatter
+  // does not skew the threshold. Do this BEFORE any mutations so the measured
+  // lengths are the originals.
+  const fromBody = readPage(fromAbs).body;
+  const intoBodyPre = readPage(intoAbs).body;
+  const mergedBody = fs.readFileSync(tmp, 'utf8');
+  const floor = Math.floor(Math.max(fromBody.length, intoBodyPre.length) * 0.5);
+  if (mergedBody.length < floor) {
+    die(`merged body suspiciously short — refusing merge (got ${mergedBody.length} bytes, expected ≥ ${floor})`, 3);
+  }
+
+  // Replace into's body, bump `updated:`.
+  const into = readPage(intoAbs);
+  into.body = mergedBody;
+  into.frontmatter.updated = todayUtc();
+  writePage(intoAbs, into);
+
+  // Rewrite inbound references BEFORE deleting `from`. linkRewrite's bare-name
+  // resolver walks the current filesystem; if we delete `from` first the
+  // resolver can no longer find it and `[[fromBasename]]` rewrites silently
+  // skip.
+  linkRewrite(vault, args.from, args.into);
+
+  // Delete from.
+  fs.unlinkSync(fromAbs);
+
+  // Drop the dead index row.
+  indexDropRow(vault, stripMd(args.from));
+
+  // Commit.
+  git(['add', '--', 'wiki/'], vault);
+  git(['commit', '-m', `reorganize: merge ${args.from} into ${args.into}`], vault);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -296,7 +355,7 @@ function main() {
   if (cmd === 'begin') return cmdBegin(vault);
   if (cmd === 'candidates') return die('candidates: not implemented yet', 1);
   if (cmd === 'move-page') return cmdMovePage(vault, args);
-  if (cmd === 'merge-page') return die('merge-page: not implemented yet', 1);
+  if (cmd === 'merge-page') return cmdMergePage(vault, args);
   if (cmd === 'mark-covered') return die('mark-covered: not implemented yet', 1);
   if (cmd === 'parent-create') return die('parent-create: not implemented yet', 1);
   if (cmd === 'relations-add') return die('relations-add: not implemented yet', 1);

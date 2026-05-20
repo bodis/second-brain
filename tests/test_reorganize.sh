@@ -244,6 +244,154 @@ OTHER=$(cat "$V/wiki/concepts/other.md")
 echo "$OTHER" | grep -q 'sources: \[wiki/concepts/old\]'  && echo "  PASS: sources: untouched" && PASS=$((PASS+1)) \
                                                           || (echo "  FAIL: sources: was rewritten"; FAIL=$((FAIL+1)))
 
+# Test 6: merge-page absorbs body, deletes from, rewrites refs, drops index row.
+echo ""
+echo "Test 6: merge-page happy path"
+V=$(make_vault merge)
+cat > "$V/wiki/concepts/alignment.md" <<'MEOF'
+---
+tags: [ai]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# Alignment
+
+Original body for alignment. Has multiple paragraphs.
+More content. More content. More content.
+MEOF
+cat > "$V/wiki/concepts/ai-alignment.md" <<'MEOF'
+---
+tags: [ai]
+sources: [raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# AI Alignment
+
+Body for ai-alignment. Several paragraphs of overlapping content.
+More. More. More.
+MEOF
+cat > "$V/wiki/concepts/other.md" <<'MEOF'
+---
+tags: [ai]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+relations:
+  see-also: [wiki/concepts/alignment]
+---
+
+# Other
+
+See [[alignment]] for context.
+MEOF
+cat > "$V/wiki/index.md" <<'IEOF'
+# Index
+
+## Sources
+
+## Entities
+
+## Concepts
+
+- [[wiki/concepts/alignment]] — earlier page
+- [[wiki/concepts/ai-alignment]] — survivor
+- [[wiki/concepts/other]]
+
+## Synthesis
+IEOF
+(cd "$V" && git add . && git commit -qm "setup")
+# Provide a merged body roughly the size of the larger original — passes the
+# sanity check.
+MERGED=$(mktemp)
+cat > "$MERGED" <<'BEOF'
+# AI Alignment
+
+Combined body. Lots of content carried over from both originals.
+More. More. More. More. More.
+BEOF
+BEFORE_CT=$(commit_count "$V")
+OUT=$( (cd "$V" && node "$SCRIPT" merge-page --from wiki/concepts/alignment.md --into wiki/concepts/ai-alignment.md --merged-body "$MERGED") )
+AFTER_CT=$(commit_count "$V")
+assert_eq "one new commit"            "$((BEFORE_CT + 1))" "$AFTER_CT"
+assert_eq "commit msg names merge"    "reorganize: merge wiki/concepts/alignment.md into wiki/concepts/ai-alignment.md" "$(last_msg "$V")"
+[ ! -f "$V/wiki/concepts/alignment.md" ] && echo "  PASS: alignment.md deleted" && PASS=$((PASS+1)) \
+                                         || (echo "  FAIL: alignment.md not deleted"; FAIL=$((FAIL+1)))
+# Inbound prose link rewritten.
+OTH=$(cat "$V/wiki/concepts/other.md")
+echo "$OTH" | grep -q '\[\[ai-alignment\]\]'           && echo "  PASS: prose rewritten" && PASS=$((PASS+1)) \
+                                                        || (echo "  FAIL: prose not rewritten"; FAIL=$((FAIL+1)))
+# Inbound relations target rewritten.
+echo "$OTH" | grep -q 'see-also:.*wiki/concepts/ai-alignment' \
+                                                        && echo "  PASS: relations rewritten" && PASS=$((PASS+1)) \
+                                                        || (echo "  FAIL: relations not rewritten"; FAIL=$((FAIL+1)))
+# Index row dropped, survivor row preserved.
+IDX=$(cat "$V/wiki/index.md")
+echo "$IDX" | grep -q 'wiki/concepts/alignment\]\]'    && (echo "  FAIL: dead row still in index"; FAIL=$((FAIL+1))) \
+                                                        || (echo "  PASS: dead row removed" && PASS=$((PASS+1)))
+echo "$IDX" | grep -q 'wiki/concepts/ai-alignment\]\] — survivor' \
+                                                        && echo "  PASS: survivor row preserved" && PASS=$((PASS+1)) \
+                                                        || (echo "  FAIL: survivor row clobbered"; FAIL=$((FAIL+1)))
+# Survivor body equals the merged body.
+SURV=$(cat "$V/wiki/concepts/ai-alignment.md")
+echo "$SURV" | grep -q "Combined body"                  && echo "  PASS: survivor body absorbed" && PASS=$((PASS+1)) \
+                                                        || (echo "  FAIL: survivor body not updated"; FAIL=$((FAIL+1)))
+# `updated:` bumped on the survivor.
+TODAY=$(date -u +%Y-%m-%d)
+echo "$SURV" | grep -q "updated: $TODAY"                && echo "  PASS: updated date bumped" && PASS=$((PASS+1)) \
+                                                        || (echo "  FAIL: updated date not bumped"; FAIL=$((FAIL+1)))
+rm -f "$MERGED"
+
+# Test 7: merge-page refuses when merged body is below the sanity floor.
+echo ""
+echo "Test 7: merge-page refuses suspiciously short merged body"
+V=$(make_vault merge-short)
+cat > "$V/wiki/concepts/a.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# A
+
+$(printf 'a%.0s' {1..200})
+MEOF
+cat > "$V/wiki/concepts/b.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/y.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+
+# B
+
+$(printf 'b%.0s' {1..200})
+MEOF
+(cd "$V" && git add . && git commit -qm "setup")
+SHORT=$(mktemp)
+echo "tiny" > "$SHORT"
+BEFORE_CT=$(commit_count "$V")
+set +e
+ERR=$( (cd "$V" && node "$SCRIPT" merge-page --from wiki/concepts/a.md --into wiki/concepts/b.md --merged-body "$SHORT") 2>&1 1>/dev/null )
+RC=$?
+set -e
+AFTER_CT=$(commit_count "$V")
+assert_eq "exit code 3"             "3"  "$RC"
+assert_eq "no commit made"          "$BEFORE_CT" "$AFTER_CT"
+echo "$ERR" | grep -q "merged body suspiciously short" \
+  && echo "  PASS: refusal message" && PASS=$((PASS+1)) \
+  || (echo "  FAIL: refusal message wording"; FAIL=$((FAIL+1)))
+# from page must still exist after refusal.
+[ -f "$V/wiki/concepts/a.md" ] && echo "  PASS: from page survived" && PASS=$((PASS+1)) \
+                               || (echo "  FAIL: from page got deleted despite refusal"; FAIL=$((FAIL+1)))
+rm -f "$SHORT"
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
