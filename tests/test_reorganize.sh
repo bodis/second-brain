@@ -585,6 +585,93 @@ echo "$P" | grep -q "wiki/concepts/oidc"  && echo "  PASS: new target appended" 
 # see-also untouched.
 echo "$P" | grep -q "see-also:"           && echo "  PASS: see-also preserved"   && PASS=$((PASS+1)) || (echo "  FAIL: see-also dropped"; FAIL=$((FAIL+1)))
 
+# Test 12: validate-or-revert exits 0 when validator is clean.
+echo ""
+echo "Test 12: validate-or-revert pass-through on clean tree"
+V=$(make_vault val-clean)
+cat > "$V/wiki/concepts/p.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# p
+MEOF
+cat > "$V/wiki/index.md" <<'IEOF'
+# Index
+
+## Sources
+
+## Entities
+
+## Concepts
+
+- [[wiki/concepts/p]]
+
+## Synthesis
+IEOF
+(cd "$V" && git add . && git commit -qm "setup")
+BEFORE_CT=$(commit_count "$V")
+set +e
+(cd "$V" && node "$SCRIPT" validate-or-revert)
+RC=$?
+set -e
+AFTER_CT=$(commit_count "$V")
+assert_eq "exit 0 on clean"        "0" "$RC"
+assert_eq "no revert commit"       "$BEFORE_CT" "$AFTER_CT"
+
+# Test 13: validate-or-revert reverts HEAD and exits 2 when validator finds structural error.
+echo ""
+echo "Test 13: validate-or-revert reverts on structural error"
+V=$(make_vault val-revert)
+cat > "$V/wiki/concepts/p.md" <<'MEOF'
+---
+tags: [t]
+sources: [raw/x.md]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# p
+MEOF
+cat > "$V/wiki/index.md" <<'IEOF'
+# Index
+
+## Sources
+
+## Entities
+
+## Concepts
+
+- [[wiki/concepts/p]]
+
+## Synthesis
+IEOF
+(cd "$V" && git add . && git commit -qm "setup")
+# Now make a bad commit: a page with broken frontmatter (missing `sources`).
+cat > "$V/wiki/concepts/bad.md" <<'MEOF'
+---
+tags: [t]
+created: 2026-05-01
+updated: 2026-05-01
+---
+# Bad
+MEOF
+(cd "$V" && git add . && git commit -qm "bad commit")
+BEFORE_CT=$(commit_count "$V")
+set +e
+(cd "$V" && node "$SCRIPT" validate-or-revert)
+RC=$?
+set -e
+AFTER_CT=$(commit_count "$V")
+assert_eq "exit 2 on structural"           "2" "$RC"
+assert_eq "one revert commit added"        "$((BEFORE_CT + 1))" "$AFTER_CT"
+LAST=$( (cd "$V" && git log -1 --pretty=%s) )
+case "$LAST" in
+  Revert*) echo "  PASS: revert commit on top" && PASS=$((PASS+1)) ;;
+  *)       echo "  FAIL: top commit is '$LAST'" && FAIL=$((FAIL+1)) ;;
+esac
+
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

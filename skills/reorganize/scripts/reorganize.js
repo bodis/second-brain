@@ -400,6 +400,24 @@ function cmdRelationsAdd(vault, args) {
   git(['commit', '-m', `reorganize: type relations on ${args.page}`], vault);
 }
 
+function cmdValidateOrRevert(vault) {
+  // Resolve the validator path relative to this script's location so it
+  // works whether invoked via $CLAUDE_PLUGIN_ROOT or from a worktree.
+  const validator = path.resolve(__dirname, '..', '..', '..', 'scripts', 'validate-wiki.js');
+  const r = spawnSync('node', [validator, 'all'], { cwd: vault, encoding: 'utf8' });
+  // The validator writes its own diagnostics to stderr; surface them.
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.stdout) process.stdout.write(r.stdout);
+  const code = r.status;
+  if (code === 0) return process.exit(0);
+  if (code === 1) return process.exit(1);
+  if (code === 2) {
+    git(['revert', 'HEAD', '--no-edit'], vault);
+    return process.exit(2);
+  }
+  return process.exit(code || 1);
+}
+
 function git(args, vault) {
   const r = spawnSync('git', args, { cwd: vault, encoding: 'utf8' });
   if (r.status !== 0) {
@@ -462,7 +480,7 @@ function main() {
   if (cmd === 'mark-covered') return cmdMarkCovered(vault, args);
   if (cmd === 'parent-create') return cmdParentCreate(vault, args);
   if (cmd === 'relations-add') return cmdRelationsAdd(vault, args);
-  if (cmd === 'validate-or-revert') return die('validate-or-revert: not implemented yet', 1);
+  if (cmd === 'validate-or-revert') return cmdValidateOrRevert(vault);
   die(`unknown subcommand: ${cmd}`);
 }
 
