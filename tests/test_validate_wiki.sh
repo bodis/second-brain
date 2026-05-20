@@ -297,6 +297,30 @@ set -e
 assert_eq "dead-row exit 2" "2" "$RC"
 assert_eq "dead_rows[0].target names deleted-page" "wiki/sources/deleted-page" "$(echo "$OUT" | jq_get dead_rows.0.target)"
 
+# Test 15: all on clean fixture → exit 0, aggregated JSON has all three keys.
+echo ""
+echo "Test 15: all on clean fixture"
+V=$(prepare_vault clean)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) )
+RC=$?
+set -e
+assert_eq "all clean exit 0" "0" "$RC"
+assert_eq "all clean frontmatter.errors length 0" "0" "$(echo "$OUT" | jq_get frontmatter.errors.length)"
+assert_eq "all clean wikilinks.broken length 0" "0" "$(echo "$OUT" | jq_get wikilinks.broken.length)"
+assert_eq "all clean index.missing_rows length 0" "0" "$(echo "$OUT" | jq_get index.missing_rows.length)"
+
+# Test 16: all returns max of child exit codes (frontmatter=2 wins).
+echo ""
+echo "Test 16: all aggregates worst exit code"
+V=$(prepare_vault frontmatter-missing-key)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) )
+RC=$?
+set -e
+assert_eq "all worst-code exit 2" "2" "$RC"
+assert_eq "all frontmatter errors > 0" "1" "$(echo "$OUT" | jq_get frontmatter.errors.length)"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

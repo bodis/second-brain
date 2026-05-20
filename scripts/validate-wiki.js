@@ -180,6 +180,15 @@ function validateKey(value, spec) {
 // embedded newlines.
 const WIKILINK_RE = /\[\[([^\]\n|]+)(?:\|[^\]\n]*)?\]\]/g;
 
+// Build a case-insensitive index of basename → vault-relative path.
+function buildBareIndex(pages) {
+  const m = new Map();
+  for (const rel of pages) {
+    m.set(path.basename(rel, '.md').toLowerCase(), rel);
+  }
+  return m;
+}
+
 function extractWikilinks(absPath) {
   let text;
   try { text = fs.readFileSync(absPath, 'utf8'); }
@@ -234,12 +243,53 @@ function readIndexTargets(vault) {
 
 const INDEXED_ROOTS = ['wiki/sources', 'wiki/entities', 'wiki/concepts', 'wiki/synthesis'];
 
-function runAll(_vault, _json) {
-  // Stub — Task 7 fills this in by composing the three subcommands.
-  return { code: 0, output: '' };
+function runAll(vault, json) {
+  // Each child returns {code, output}. We re-run them in JSON mode regardless
+  // of the outer --json flag so we can compose the result. Pass quiet=true so
+  // they do not double-print human-readable stderr — runAll re-renders below.
+  const fm = runFrontmatter(vault, true, true);
+  const wl = runWikilinks(vault, true, true);
+  const ix = runIndex(vault, true, true);
+
+  const parsed = {
+    frontmatter: JSON.parse(fm.output || '{"errors":[],"warnings":[]}'),
+    wikilinks: JSON.parse(wl.output || '{"broken":[],"orphans":[]}'),
+    index: JSON.parse(ix.output || '{"missing_rows":[],"dead_rows":[]}'),
+  };
+  const code = Math.max(fm.code, wl.code, ix.code);
+
+  if (json) {
+    return { code, output: JSON.stringify(parsed, null, 2) + '\n' };
+  }
+  if (code === 0) return { code: 0, output: '' };
+  // Human summary on stderr — one line per child with non-zero exit.
+  if (fm.code !== 0) {
+    for (const e of parsed.frontmatter.errors) {
+      process.stderr.write(`frontmatter: ${e.path} ${e.problem}\n`);
+    }
+  }
+  if (wl.code !== 0) {
+    process.stderr.write(
+      `wikilinks: ${parsed.wikilinks.broken.length} broken, ` +
+      `${parsed.wikilinks.orphans.length} orphan\n`
+    );
+  }
+  if (ix.code !== 0) {
+    if (parsed.index.dead_rows.length > 0) {
+      for (const d of parsed.index.dead_rows) {
+        process.stderr.write(`index: dead row -> ${d.target}\n`);
+      }
+    }
+    if (parsed.index.missing_rows.length > 0) {
+      process.stderr.write(
+        `index: ${parsed.index.missing_rows.length} missing row(s); run sync-index.js to fix\n`
+      );
+    }
+  }
+  return { code, output: '' };
 }
 
-function runFrontmatter(vault, json) {
+function runFrontmatter(vault, json, quiet = false) {
   const contract = loadContract(vault);
   const targets = expandTargets(vault, contract);
   const errors = [];
@@ -265,20 +315,19 @@ function runFrontmatter(vault, json) {
   }
   if (errors.length === 0) return { code: 0, output: '' };
   // Human summary on stderr, no stdout.
-  for (const e of errors) {
-    process.stderr.write(`frontmatter: ${e.path} ${e.problem}\n`);
+  if (!quiet) {
+    for (const e of errors) {
+      process.stderr.write(`frontmatter: ${e.path} ${e.problem}\n`);
+    }
   }
   return { code, output: '' };
 }
 
-function runWikilinks(vault, json) {
+function runWikilinks(vault, json, quiet = false) {
   // Walk wiki/ once; derive both the page list and the case-insensitive
   // bare-name index from the same traversal.
   const pages = [...walkMarkdown(vault, 'wiki')];
-  const bareIndex = new Map();
-  for (const rel of pages) {
-    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
-  }
+  const bareIndex = buildBareIndex(pages);
   const broken = [];
   const inbound = new Map(); // resolved-target-path -> count
   for (const rel of pages) {
@@ -304,17 +353,15 @@ function runWikilinks(vault, json) {
     return { code, output: JSON.stringify({ broken, orphans }, null, 2) + '\n' };
   }
   if (code === 0) return { code: 0, output: '' };
-  process.stderr.write(`wikilinks: ${broken.length} broken, ${orphans.length} orphan\n`);
+  if (!quiet) {
+    process.stderr.write(`wikilinks: ${broken.length} broken, ${orphans.length} orphan\n`);
+  }
   return { code, output: '' };
 }
 
-function runIndex(vault, json) {
-  // Build the bare-name index inline (same pattern as runWikilinks).
+function runIndex(vault, json, quiet = false) {
   const pages = [...walkMarkdown(vault, 'wiki')];
-  const bareIndex = new Map();
-  for (const rel of pages) {
-    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
-  }
+  const bareIndex = buildBareIndex(pages);
   const indexTargets = readIndexTargets(vault);
 
   // Set of resolved vault-relative paths the index covers.
@@ -345,11 +392,13 @@ function runIndex(vault, json) {
     };
   }
   if (code === 0) return { code: 0, output: '' };
-  if (deadRows.length > 0) {
-    for (const d of deadRows) process.stderr.write(`index: dead row -> ${d.target}\n`);
-  }
-  if (missingRows.length > 0) {
-    process.stderr.write(`index: ${missingRows.length} missing row(s); run sync-index.js to fix\n`);
+  if (!quiet) {
+    if (deadRows.length > 0) {
+      for (const d of deadRows) process.stderr.write(`index: dead row -> ${d.target}\n`);
+    }
+    if (missingRows.length > 0) {
+      process.stderr.write(`index: ${missingRows.length} missing row(s); run sync-index.js to fix\n`);
+    }
   }
   return { code, output: '' };
 }
