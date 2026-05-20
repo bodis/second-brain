@@ -21,6 +21,12 @@ if [ -d "$VAULT_ROOT/.obsidian" ] && [ -d "$VAULT_ROOT/wiki" ]; then
   exit 2
 fi
 
+if [ -d "$VAULT_ROOT/wiki" ] && [ ! -d "$VAULT_ROOT/.obsidian" ]; then
+  echo "error: orphaned scaffold — wiki/ exists at $VAULT_ROOT but .obsidian/ does not" >&2
+  echo "Open the directory in Obsidian first to create .obsidian/, then re-run /second-brain:onboard." >&2
+  exit 3
+fi
+
 echo "=== Second Brain Onboarding ===" >&2
 
 # 1. Create directory structure
