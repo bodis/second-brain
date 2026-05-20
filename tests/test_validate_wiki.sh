@@ -236,6 +236,32 @@ echo "$OUT" | grep -q '"wiki/concepts/widget.md"' \
   && (echo "  FAIL: widget should not be orphan after WIDGET link"; FAIL=$((FAIL + 1))) \
   || (echo "  PASS: widget resolved via case-insensitive bare-name match"; PASS=$((PASS + 1)))
 
+# Test 11b: a page that only links to itself is still orphan.
+echo ""
+echo "Test 11b: self-link does not rescue orphan"
+V=$(prepare_vault clean)
+mkdir -p "$V/wiki/concepts"
+cat > "$V/wiki/concepts/self-loop.md" <<'EOF'
+---
+tags: [example]
+sources: [raw/example.md]
+created: 2026-05-20
+updated: 2026-05-20
+---
+
+# Self Loop
+
+See [[Self Loop]] for itself.
+EOF
+(cd "$V" && git add . && git commit -qm "add self-loop" >/dev/null)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+echo "$OUT" | grep -q '"wiki/concepts/self-loop.md"' \
+  && echo "  PASS: self-link page is still orphan" && PASS=$((PASS + 1)) \
+  || (echo "  FAIL: self-link page should be orphan"; echo "    actual: $OUT"; FAIL=$((FAIL + 1)))
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

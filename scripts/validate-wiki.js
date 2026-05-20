@@ -188,22 +188,10 @@ function extractWikilinks(absPath) {
   let m;
   WIKILINK_RE.lastIndex = 0;
   while ((m = WIKILINK_RE.exec(text)) !== null) {
-    out.push(m[1].trim());
+    const t = m[1].trim();
+    if (t) out.push(t);  // skip [[ ]] and other whitespace-only matches
   }
   return out;
-}
-
-// Build a case-insensitive index of basename → vault-relative path for every
-// .md file under wiki/. Returns Map<lowercased-basename, vault-relative-path>.
-function buildBareNameIndex(vault) {
-  const idx = new Map();
-  for (const rel of walkMarkdown(vault, 'wiki')) {
-    const base = path.basename(rel, '.md').toLowerCase();
-    // Last writer wins is fine — bare-name collisions are a vault problem the
-    // user should resolve, and the wikilinks check is not the place to flag it.
-    idx.set(base, rel);
-  }
-  return idx;
 }
 
 // Resolve a wikilink target against the three rules. Returns the resolved
@@ -273,10 +261,13 @@ function runFrontmatter(vault, json) {
 }
 
 function runWikilinks(vault, json) {
-  const bareIndex = buildBareNameIndex(vault);
-  // Walk every page under wiki/ (including index.md and log.md — links from
-  // them count as inbound to the target).
+  // Walk wiki/ once; derive both the page list and the case-insensitive
+  // bare-name index from the same traversal.
   const pages = [...walkMarkdown(vault, 'wiki')];
+  const bareIndex = new Map();
+  for (const rel of pages) {
+    bareIndex.set(path.basename(rel, '.md').toLowerCase(), rel);
+  }
   const broken = [];
   const inbound = new Map(); // resolved-target-path -> count
   for (const rel of pages) {
@@ -285,7 +276,9 @@ function runWikilinks(vault, json) {
       const resolved = resolveWikilink(target, vault, bareIndex);
       if (!resolved) {
         broken.push({ from: rel, target });
-      } else {
+      } else if (resolved !== rel) {
+        // Self-links do not count toward inbound — an orphan that mentions itself
+        // is still an orphan from the graph's perspective.
         inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
       }
     }
