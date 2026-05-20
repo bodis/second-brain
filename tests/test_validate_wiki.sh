@@ -102,6 +102,52 @@ echo "$ERR" | grep -q "unknown subcommand" \
   && echo "  PASS: unknown subcommand stderr names the problem" && PASS=$((PASS + 1)) \
   || (echo "  FAIL: unknown subcommand stderr"; echo "    actual: $ERR"; FAIL=$((FAIL + 1)))
 
+# Test 4: clean fixture → frontmatter exits 0 with empty errors.
+echo ""
+echo "Test 4: frontmatter on clean fixture"
+V=$(prepare_vault clean)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "clean exit code 0" "0" "$RC"
+assert_eq "clean errors length 0" "0" "$(echo "$OUT" | jq_get errors.length)"
+
+# Test 5: missing required key → exit 2, errors[].key === 'sources'.
+echo ""
+echo "Test 5: frontmatter missing required key"
+V=$(prepare_vault frontmatter-missing-key)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "missing-key exit code 2" "2" "$RC"
+assert_eq "errors[0].key is sources" "sources" "$(echo "$OUT" | jq_get errors.0.key)"
+
+# Test 6: bad-date → exit 2, errors[].key === 'updated', errors[].problem mentions date.
+echo ""
+echo "Test 6: frontmatter bad date"
+V=$(prepare_vault frontmatter-bad-date)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" frontmatter --json) )
+RC=$?
+set -e
+assert_eq "bad-date exit code 2" "2" "$RC"
+assert_eq "errors[0].key is updated" "updated" "$(echo "$OUT" | jq_get errors.0.key)"
+
+# Test 7: human-readable summary on stderr when --json absent.
+echo ""
+echo "Test 7: frontmatter human summary on stderr"
+V=$(prepare_vault frontmatter-missing-key)
+set +e
+ERR=$( (cd "$V" && node "$SCRIPT" frontmatter) 2>&1 1>/dev/null )
+RC=$?
+set -e
+assert_eq "no-json exit code 2" "2" "$RC"
+echo "$ERR" | grep -q "missing required key 'sources'" \
+  && echo "  PASS: stderr names missing key" && PASS=$((PASS + 1)) \
+  || (echo "  FAIL: stderr did not name missing key"; echo "    actual: $ERR"; FAIL=$((FAIL + 1)))
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
