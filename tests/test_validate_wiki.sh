@@ -159,6 +159,83 @@ echo "$ERR" | grep -q "missing required key 'sources'" \
   && echo "  PASS: stderr names missing key" && PASS=$((PASS + 1)) \
   || (echo "  FAIL: stderr did not name missing key"; echo "    actual: $ERR"; FAIL=$((FAIL + 1)))
 
+# Test 8: clean fixture → wikilinks exits 0.
+echo ""
+echo "Test 8: wikilinks on clean fixture"
+V=$(prepare_vault clean)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+assert_eq "clean wikilinks exit 0" "0" "$RC"
+assert_eq "clean broken length 0" "0" "$(echo "$OUT" | jq_get broken.length)"
+assert_eq "clean orphans length 0" "0" "$(echo "$OUT" | jq_get orphans.length)"
+
+# Test 9: broken link → exit 1, broken[].target names the unresolved link.
+echo ""
+echo "Test 9: wikilinks broken link"
+V=$(prepare_vault wikilink-broken)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+assert_eq "broken exit 1" "1" "$RC"
+assert_eq "broken[0].target is Nonexistent Concept" "Nonexistent Concept" "$(echo "$OUT" | jq_get broken.0.target)"
+assert_eq "broken[0].from is example source" "wiki/sources/example-source.md" "$(echo "$OUT" | jq_get broken.0.from)"
+
+# Test 10: orphan page → exit 1, orphans[].path names the lonely page, broken empty.
+echo ""
+echo "Test 10: wikilinks orphan page"
+V=$(prepare_vault wikilink-orphan)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+assert_eq "orphan exit 1" "1" "$RC"
+assert_eq "orphan broken length 0" "0" "$(echo "$OUT" | jq_get broken.length)"
+assert_eq "orphan orphans[0].path is lonely" "wiki/sources/lonely.md" "$(echo "$OUT" | jq_get orphans.0.path)"
+
+# Test 11: bare-name wikilink resolves case-insensitively.
+echo ""
+echo "Test 11: bare-name resolution is case-insensitive"
+V=$(prepare_vault clean)
+# Add a concept page and link to it from a new source with mixed case.
+mkdir -p "$V/wiki/concepts"
+cat > "$V/wiki/concepts/widget.md" <<'EOF'
+---
+tags: [example]
+sources: [raw/example.md]
+created: 2026-05-20
+updated: 2026-05-20
+---
+
+# Widget
+EOF
+cat > "$V/wiki/sources/has-link.md" <<'EOF'
+---
+tags: [example]
+sources: [raw/example.md]
+created: 2026-05-20
+updated: 2026-05-20
+---
+
+# Has Link
+
+See [[WIDGET]] for details.
+EOF
+(cd "$V" && git add . && git commit -qm "add widget+link" >/dev/null)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" wikilinks --json) )
+RC=$?
+set -e
+# Widget is no longer orphan because has-link.md → WIDGET resolves to widget.md.
+# example-source.md may or may not be orphan depending on index.md. We assert
+# the broken list is empty and `wiki/concepts/widget.md` is not in orphans.
+assert_eq "case-insensitive broken length 0" "0" "$(echo "$OUT" | jq_get broken.length)"
+echo "$OUT" | grep -q '"wiki/concepts/widget.md"' \
+  && (echo "  FAIL: widget should not be orphan after WIDGET link"; FAIL=$((FAIL + 1))) \
+  || (echo "  PASS: widget resolved via case-insensitive bare-name match"; PASS=$((PASS + 1)))
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

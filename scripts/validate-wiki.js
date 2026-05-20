@@ -175,6 +175,66 @@ function validateKey(value, spec) {
   return `unknown contract type: ${spec.type}`;
 }
 
+// Match every [[...]] occurrence. Allow only target + optional `|alias` within
+// the brackets; pipe-aliases keep just the target. Reject patterns with
+// embedded newlines.
+const WIKILINK_RE = /\[\[([^\]\n|]+)(?:\|[^\]\n]*)?\]\]/g;
+
+function extractWikilinks(absPath) {
+  let text;
+  try { text = fs.readFileSync(absPath, 'utf8'); }
+  catch { return []; }
+  const out = [];
+  let m;
+  WIKILINK_RE.lastIndex = 0;
+  while ((m = WIKILINK_RE.exec(text)) !== null) {
+    out.push(m[1].trim());
+  }
+  return out;
+}
+
+// Build a case-insensitive index of basename → vault-relative path for every
+// .md file under wiki/. Returns Map<lowercased-basename, vault-relative-path>.
+function buildBareNameIndex(vault) {
+  const idx = new Map();
+  for (const rel of walkMarkdown(vault, 'wiki')) {
+    const base = path.basename(rel, '.md').toLowerCase();
+    // Last writer wins is fine — bare-name collisions are a vault problem the
+    // user should resolve, and the wikilinks check is not the place to flag it.
+    idx.set(base, rel);
+  }
+  return idx;
+}
+
+// Resolve a wikilink target against the three rules. Returns the resolved
+// vault-relative path (e.g. 'wiki/concepts/foo.md') or null if unresolved.
+function resolveWikilink(target, vault, bareIndex) {
+  // Rule 2: wiki path — `wiki/...` (no extension).
+  if (target.startsWith('wiki/')) {
+    const abs = path.join(vault, target + '.md');
+    if (fs.existsSync(abs)) return target + '.md';
+    return null;
+  }
+  // Rule 3: documentation path — `src/documentation/...` (no extension).
+  if (target.startsWith('src/documentation/')) {
+    const abs = path.join(vault, target + '.md');
+    if (fs.existsSync(abs)) return target + '.md';
+    return null;
+  }
+  // Rule 1: bare name (case-insensitive basename match anywhere under wiki/).
+  const hit = bareIndex.get(target.toLowerCase());
+  if (hit) return hit;
+  return null;
+}
+
+// Subdirs of wiki/ whose pages should be checked for inbound links. Top-level
+// wiki/index.md and wiki/log.md are not in scope for the orphan check.
+const ORPHAN_ROOTS = ['wiki/sources', 'wiki/entities', 'wiki/concepts', 'wiki/synthesis'];
+
+function isOrphanCandidate(rel) {
+  return ORPHAN_ROOTS.some(root => rel === root + '.md' || rel.startsWith(root + '/'));
+}
+
 function runAll(_vault, _json) {
   // Stub — Task 7 fills this in by composing the three subcommands.
   return { code: 0, output: '' };
@@ -212,9 +272,36 @@ function runFrontmatter(vault, json) {
   return { code, output: '' };
 }
 
-function runWikilinks(_vault, _json) {
-  // Stub — Task 5 fills this in.
-  return { code: 0, output: '' };
+function runWikilinks(vault, json) {
+  const bareIndex = buildBareNameIndex(vault);
+  // Walk every page under wiki/ (including index.md and log.md — links from
+  // them count as inbound to the target).
+  const pages = [...walkMarkdown(vault, 'wiki')];
+  const broken = [];
+  const inbound = new Map(); // resolved-target-path -> count
+  for (const rel of pages) {
+    const abs = path.join(vault, rel);
+    for (const target of extractWikilinks(abs)) {
+      const resolved = resolveWikilink(target, vault, bareIndex);
+      if (!resolved) {
+        broken.push({ from: rel, target });
+      } else {
+        inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
+      }
+    }
+  }
+  const orphans = [];
+  for (const rel of pages) {
+    if (!isOrphanCandidate(rel)) continue;
+    if ((inbound.get(rel) || 0) === 0) orphans.push({ path: rel });
+  }
+  const code = (broken.length > 0 || orphans.length > 0) ? 1 : 0;
+  if (json) {
+    return { code, output: JSON.stringify({ broken, orphans }, null, 2) + '\n' };
+  }
+  if (code === 0) return { code: 0, output: '' };
+  process.stderr.write(`wikilinks: ${broken.length} broken, ${orphans.length} orphan\n`);
+  return { code, output: '' };
 }
 
 function runIndex(_vault, _json) {
