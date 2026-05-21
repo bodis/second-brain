@@ -47,7 +47,7 @@ function parseArgs(argv) {
 }
 
 // Read a YAML file under wiki/.state/. Returns parsed object or null if absent.
-// Throws on parse errors so the caller can decide exit semantics.
+// Calls die() and exits with code 2 on read or parse errors.
 function readStateYaml(vault, relname) {
   const abs = path.join(vault, 'wiki', '.state', relname);
   if (!fs.existsSync(abs)) return null;
