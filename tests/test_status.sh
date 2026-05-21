@@ -163,6 +163,17 @@ assert_eq "contradictions.unresolved === 3"   "3"    "$(echo "$OUT" | json_path 
 assert_eq "contradictions.present === true"   "true" "$(echo "$OUT" | json_path 'contradictions.present')"
 assert_eq "contradictions.unjudged_candidates === 0" "0" "$(echo "$OUT" | json_path 'contradictions.unjudged_candidates')"
 
+# Test 5: staleness.yaml with 3 high-unreviewed + 2 medium-unreviewed.
+echo ""
+echo "Test 5: staleness counts from state file"
+V5="$TEST_DIR/staleness-populated"
+cp -R "$REPO_ROOT/tests/fixtures/status/staleness-populated" "$V5"
+(cd "$V5" && git init -q && git config user.email "t@t" && git config user.name "t" && git config commit.gpgsign false && git add . && git commit -qm "init" >/dev/null)
+OUT=$( (cd "$V5" && node "$SCRIPT" --json) )
+assert_eq "staleness.unresolved_high === 3"     "3"    "$(echo "$OUT" | json_path 'staleness.unresolved_high')"
+assert_eq "staleness.unresolved_medium === 2"   "2"    "$(echo "$OUT" | json_path 'staleness.unresolved_medium')"
+assert_eq "staleness.present === true"          "true" "$(echo "$OUT" | json_path 'staleness.present')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

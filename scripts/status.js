@@ -103,7 +103,23 @@ function readContradictions(vault) {
   }
   return { unjudged_candidates: 0, unresolved, present: true };
 }
-function readStaleness(vault)      { return { unjudged_candidates: 0, unresolved_high: 0, unresolved_medium: 0, present: false }; }
+function readStaleness(vault) {
+  const doc = readStateYaml(vault, 'staleness.yaml');
+  if (!doc) return {
+    unjudged_candidates: 0,
+    unresolved_high: 0,
+    unresolved_medium: 0,
+    present: false,
+  };
+  const entries = Array.isArray(doc.pages) ? doc.pages : [];
+  let unresolved_high = 0, unresolved_medium = 0;
+  for (const e of entries) {
+    if (!e || e.status !== 'unreviewed') continue;
+    if (e.signal === 'high')   unresolved_high   += 1;
+    if (e.signal === 'medium') unresolved_medium += 1;
+  }
+  return { unjudged_candidates: 0, unresolved_high, unresolved_medium, present: true };
+}
 function readSinceReview(vault)    { return { change_count: 0, last_accepted_at: null }; }
 
 function buildDashboard(vault) {
