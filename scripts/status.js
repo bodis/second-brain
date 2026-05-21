@@ -54,7 +54,7 @@ function readStateYaml(vault, relname) {
   let text;
   try { text = fs.readFileSync(abs, 'utf8'); }
   catch (err) { die(`wiki/.state/${relname} unreadable: ${err.message}`, 2); }
-  try { return yaml.load(text); }
+  try { return yaml.load(text, { schema: yaml.CORE_SCHEMA }); }
   catch (err) { die(`wiki/.state/${relname} malformed: ${err.message}`, 2); }
 }
 
@@ -120,7 +120,15 @@ function readStaleness(vault) {
   }
   return { unjudged_candidates: 0, unresolved_high, unresolved_medium, present: true };
 }
-function readSinceReview(vault)    { return { change_count: 0, last_accepted_at: null }; }
+function readSinceReview(vault) {
+  const doc = readStateYaml(vault, 'since-review.yaml');
+  if (!doc) return { change_count: 0, last_accepted_at: null };
+  const changes = Array.isArray(doc.changes) ? doc.changes : [];
+  return {
+    change_count: changes.length,
+    last_accepted_at: doc.last_accepted_at || null,
+  };
+}
 
 function buildDashboard(vault) {
   return {

@@ -174,6 +174,26 @@ assert_eq "staleness.unresolved_high === 3"     "3"    "$(echo "$OUT" | json_pat
 assert_eq "staleness.unresolved_medium === 2"   "2"    "$(echo "$OUT" | json_path 'staleness.unresolved_medium')"
 assert_eq "staleness.present === true"          "true" "$(echo "$OUT" | json_path 'staleness.present')"
 
+# Test 8: since-review.yaml with 5 changes → change_count === 5.
+echo ""
+echo "Test 8: since_review counts from state file"
+V8=$(make_vault vault8)
+cat > "$V8/wiki/.state/since-review.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/review-log.js
+last_accepted_at: 2026-05-12T08:00:00Z
+changes:
+  - { at: 2026-05-13T03:00:00Z, kind: ingest, source: raw/a.md }
+  - { at: 2026-05-13T03:01:00Z, kind: ingest, source: raw/b.md }
+  - { at: 2026-05-14T03:00:00Z, kind: ingest, source: raw/c.md }
+  - { at: 2026-05-15T03:00:00Z, kind: ingest, source: raw/d.md }
+  - { at: 2026-05-15T03:01:00Z, kind: ingest, source: raw/e.md }
+YAML
+(cd "$V8" && git add . && git commit -qm "add since-review" >/dev/null)
+OUT=$( (cd "$V8" && node "$SCRIPT" --json) )
+assert_eq "since_review.change_count === 5"          "5"                    "$(echo "$OUT" | json_path 'since_review.change_count')"
+assert_eq "since_review.last_accepted_at present"    "2026-05-12T08:00:00Z" "$(echo "$OUT" | json_path 'since_review.last_accepted_at')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
