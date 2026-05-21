@@ -58,7 +58,7 @@ function readState(vault) {
   try { text = fs.readFileSync(abs, 'utf8'); }
   catch (err) { die(`${STATE_FILE} unreadable: ${err.message}`, 2); }
   let doc;
-  try { doc = yaml.load(text); }
+  try { doc = yaml.load(text, { schema: yaml.CORE_SCHEMA }); }
   catch (err) { die(`${STATE_FILE} malformed: ${err.message}`, 2); }
   if (!doc || typeof doc !== 'object') die(`${STATE_FILE} malformed: not a YAML mapping`, 2);
   if (doc.schema_version !== SCHEMA_VERSION) {

@@ -173,6 +173,7 @@ OUT=$( (cd "$V5" && node "$SCRIPT" --json) )
 assert_eq "staleness.unresolved_high === 3"     "3"    "$(echo "$OUT" | json_path 'staleness.unresolved_high')"
 assert_eq "staleness.unresolved_medium === 2"   "2"    "$(echo "$OUT" | json_path 'staleness.unresolved_medium')"
 assert_eq "staleness.present === true"          "true" "$(echo "$OUT" | json_path 'staleness.present')"
+assert_eq "staleness.unjudged_candidates === 0" "0"    "$(echo "$OUT" | json_path 'staleness.unjudged_candidates')"
 
 # Test 8: since-review.yaml with 5 changes → change_count === 5.
 echo ""
