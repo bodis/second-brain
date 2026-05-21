@@ -67,8 +67,8 @@ Determine which files need ingestion:
 
 For each entry in `new` and `changed`, follow this workflow. The flow branches on `kind`:
 
-- **`generic`**: full workflow — create a `wiki/sources/<name>.md` summary AND entity/concept pages. All nine steps below apply.
-- **`structured`**: light-touch — SKIP step 3 ("Create source summary page"). The original `src/documentation/...` file is the canonical page. Steps 1–2 and 4–9 still apply; every reference to the source uses its full vault-relative path.
+- **`generic`**: full workflow — create a `wiki/sources/<name>.md` summary AND entity/concept pages. All ten steps below apply.
+- **`structured`**: light-touch — SKIP step 3 ("Create source summary page"). The original `src/documentation/...` file is the canonical page. Steps 1–2 and 4–10 still apply; every reference to the source uses its full vault-relative path.
 
 If the entry is `changed`, before step 1 read each path in `previous_wiki_pages` — the goal is to **update** those existing pages, not create new ones.
 
@@ -186,7 +186,21 @@ Use `--allow-empty` for a structured re-scrape that produced only whitespace or 
 
 If the tool exits with code 6 ("uncommitted non-wiki changes"), it means something outside `wiki/` is dirty (e.g., a user edit to a source file mid-run). Run `state-sources begin` again to roll that into a baseline commit, then retry.
 
-### 9. Report results
+### 9. Append a review-log entry
+
+After each successfully ingested source, record the operation in the review inbox so the user can audit unsupervised work later:
+
+```bash
+node "$CLAUDE_PLUGIN_ROOT/scripts/review-log.js" append \
+  --kind=ingest \
+  --data="{\"source\":\"<source-path>\",\"wrote\":[<wiki-page-paths>]}"
+```
+
+The `--data` payload's `wrote` list is the same `wiki_pages` array that `state-sources commit` recorded into `sources.yaml` — quote each path as a JSON string. The script lazy-creates `wiki/.state/since-review.yaml` on first call and uses an atomic write, so concurrent ingests are safe.
+
+This step runs unconditionally on every successful source commit. Interactive ingest also benefits: the user may not remember tomorrow what they ingested today, and `/second-brain:status review` becomes the durable trail.
+
+### 10. Report results
 
 Tell the user what was done:
 - Pages created (with links)
