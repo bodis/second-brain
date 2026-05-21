@@ -105,7 +105,42 @@ function cmdAppend(vault, args) {
 }
 
 function cmdShow(vault, args) {
-  die('show not yet implemented', 2);   // Filled in by Task 12.
+  const doc = readState(vault);
+  if (!doc || doc.changes.length === 0) {
+    if (args.json) {
+      process.stdout.write(JSON.stringify(doc || emptyState(), null, 2) + '\n');
+      return;
+    }
+    process.stdout.write('No review-log entries.\n');
+    return;
+  }
+  if (args.json) {
+    process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
+    return;
+  }
+  // Group by kind.
+  const groups = new Map();
+  for (const e of doc.changes) {
+    const k = e.kind || '(unknown)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
+  const lines = [];
+  lines.push(`since last accept (${doc.last_accepted_at || 'never'}): ${doc.changes.length} entries across ${groups.size} kinds`);
+  lines.push('');
+  for (const [kind, entries] of groups) {
+    lines.push(`${kind} (${entries.length}):`);
+    const shown = entries.slice(-20);
+    for (const e of shown) {
+      const { at, kind: _k, ...rest } = e;
+      lines.push(`  ${at}  ${JSON.stringify(rest)}`);
+    }
+    if (entries.length > 20) {
+      lines.push(`  ... and ${entries.length - 20} more`);
+    }
+    lines.push('');
+  }
+  process.stdout.write(lines.join('\n'));
 }
 
 function cmdAccept(vault, args) {

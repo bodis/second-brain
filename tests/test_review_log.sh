@@ -112,6 +112,43 @@ else
   echo "  FAIL: no entries landed after concurrent appends"; FAIL=$((FAIL + 1))
 fi
 
+# Test 1: show on missing file → empty output, exit 0.
+echo ""
+echo "Test 1: show on missing file"
+V1=$(make_vault vault1)
+set +e
+OUT=$( (cd "$V1" && node "$SCRIPT" show) )
+EXIT=$?
+set -e
+assert_eq "exit 0 on missing file" "0" "$EXIT"
+case "$OUT" in
+  ""|"No review-log entries"*)
+    echo "  PASS: empty or 'no entries' output on missing file"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: unexpected output on missing file — got: $OUT"; FAIL=$((FAIL + 1));;
+esac
+
+# Test 4b: show after two appends → human output groups by kind, lists both.
+echo ""
+echo "Test 4b: show groups appended entries by kind"
+V4b=$(make_vault vault4b)
+(cd "$V4b" && node "$SCRIPT" append --kind=ingest --data='{"source":"raw/a.md"}' >/dev/null)
+(cd "$V4b" && node "$SCRIPT" append --kind=ingest --data='{"source":"raw/b.md"}' >/dev/null)
+(cd "$V4b" && node "$SCRIPT" append --kind=lint-autofix --data='{"note":"fixed link"}' >/dev/null)
+OUT=$( (cd "$V4b" && node "$SCRIPT" show) )
+case "$OUT" in
+  *"ingest"*"2"*"lint-autofix"*"1"*)
+    echo "  PASS: show output mentions both kinds with counts"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: show output missing expected kind/count — got:"; echo "$OUT"
+    FAIL=$((FAIL + 1));;
+esac
+
+# Test 4b-json: show --json dumps the full file as JSON.
+OUT_JSON=$( (cd "$V4b" && node "$SCRIPT" show --json) )
+COUNT=$(echo "$OUT_JSON" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changes.length)))")
+assert_eq "show --json has 3 changes" "3" "$COUNT"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
