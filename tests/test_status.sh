@@ -104,6 +104,18 @@ assert_eq "since_review.change_count === 0"    "0"     "$(echo "$OUT" | json_pat
 assert_eq "since_review.last_accepted_at null" "null"  "$(echo "$OUT" | json_path 'since_review.last_accepted_at')"
 assert_eq "vault.name is vault1"               "vault1" "$(echo "$OUT" | json_path 'vault.name')"
 
+# Test 2: three new files in raw/ → sources.new === 3.
+echo ""
+echo "Test 2: sources counted from state-sources.js diff"
+V2=$(make_vault vault2)
+echo "one"   > "$V2/raw/one.md"
+echo "two"   > "$V2/raw/two.md"
+echo "three" > "$V2/raw/three.md"
+OUT=$( (cd "$V2" && node "$SCRIPT" --json) )
+assert_eq "sources.new === 3"     "3" "$(echo "$OUT" | json_path 'sources.new')"
+assert_eq "sources.changed === 0" "0" "$(echo "$OUT" | json_path 'sources.changed')"
+assert_eq "sources.deleted === 0" "0" "$(echo "$OUT" | json_path 'sources.deleted')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

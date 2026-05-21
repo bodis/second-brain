@@ -58,7 +58,23 @@ function readStateYaml(vault, relname) {
   catch (err) { die(`wiki/.state/${relname} malformed: ${err.message}`, 2); }
 }
 
-function readSources(vault)        { return { new: 0, changed: 0, deleted: 0 }; }
+const STATE_SOURCES_JS = path.join(__dirname, '..', 'skills', 'ingest', 'scripts', 'state-sources.js');
+
+function readSources(vault) {
+  const r = spawnSync('node', [STATE_SOURCES_JS, 'diff'], { cwd: vault, encoding: 'utf8' });
+  if (r.status !== 0) {
+    process.stderr.write(r.stderr || '');
+    die(`state-sources.js diff failed (exit ${r.status})`, 2);
+  }
+  let parsed;
+  try { parsed = JSON.parse(r.stdout); }
+  catch (err) { die(`state-sources.js diff produced invalid JSON: ${err.message}`, 2); }
+  return {
+    new:     parsed.new.length,
+    changed: parsed.changed.length,
+    deleted: parsed.deleted.length,
+  };
+}
 function readLint(vault)           { return { errors: 0, warnings: 0 }; }
 function readContradictions(vault) { return { unjudged_candidates: 0, unresolved: 0, present: false }; }
 function readStaleness(vault)      { return { unjudged_candidates: 0, unresolved_high: 0, unresolved_medium: 0, present: false }; }
