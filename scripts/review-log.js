@@ -90,7 +90,18 @@ function emptyState() {
 }
 
 function cmdAppend(vault, args) {
-  die('append not yet implemented', 2); // Filled in by Task 11.
+  if (!args.kind) die('--kind is required', 2);
+  if (!args.data) die('--data is required (use --data=\'{}\' for an empty payload)', 2);
+  let payload;
+  try { payload = JSON.parse(args.data); }
+  catch (err) { die(`--data is not valid JSON: ${err.message}`, 2); }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    die('--data must be a JSON object', 2);
+  }
+  const doc = readState(vault) || emptyState();
+  const entry = Object.assign({ at: nowIso(), kind: args.kind }, payload);
+  doc.changes.push(entry);
+  writeState(vault, doc);
 }
 
 function cmdShow(vault, args) {
