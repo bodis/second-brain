@@ -182,6 +182,28 @@ esac
 COUNT=$(node -e "process.stdout.write(String((require('js-yaml').load(require('fs').readFileSync('$V5/wiki/.state/since-review.yaml','utf8')).changes||[]).length))")
 assert_eq "changes is empty after accept" "0" "$COUNT"
 
+# Test 9: since-review.yaml with schema_version=0 → exit 2.
+echo ""
+echo "Test 9: older schema_version rejected"
+V9=$(make_vault vault9)
+cat > "$V9/wiki/.state/since-review.yaml" <<'YAML'
+schema_version: 0
+generated_by: legacy
+changes: []
+YAML
+set +e
+OUT=$( (cd "$V9" && node "$SCRIPT" show 2>&1) )
+EXIT=$?
+set -e
+assert_eq "exit 2 on schema_version=0" "2" "$EXIT"
+case "$OUT" in
+  *"schema_version"*)
+    echo "  PASS: stderr mentions schema_version"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: stderr did not mention schema_version — got: $OUT"
+    FAIL=$((FAIL + 1));;
+esac
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
