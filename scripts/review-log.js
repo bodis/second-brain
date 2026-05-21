@@ -143,8 +143,14 @@ function cmdShow(vault, args) {
   process.stdout.write(lines.join('\n'));
 }
 
-function cmdAccept(vault, args) {
-  die('accept not yet implemented', 2); // Filled in by Task 13.
+function cmdAccept(vault, _args) {
+  const doc = readState(vault) || emptyState();
+  const prevCount = doc.changes.length;
+  const prevAt = doc.last_accepted_at || '(none)';
+  doc.changes = [];
+  doc.last_accepted_at = nowIso();
+  writeState(vault, doc);
+  process.stdout.write(`accepted ${prevCount} changes since ${prevAt}\n`);
 }
 
 function parseArgs(argv) {

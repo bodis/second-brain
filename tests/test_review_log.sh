@@ -149,6 +149,39 @@ OUT_JSON=$( (cd "$V4b" && node "$SCRIPT" show --json) )
 COUNT=$(echo "$OUT_JSON" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(String(JSON.parse(d).changes.length)))")
 assert_eq "show --json has 3 changes" "3" "$COUNT"
 
+# Test 2: accept on missing file → creates file, exit 0, message reports 0 cleared.
+echo ""
+echo "Test 2: accept on missing file"
+V2=$(make_vault vault2)
+OUT=$( (cd "$V2" && node "$SCRIPT" accept) )
+assert_eq "stdout reports 0 changes" "accepted 0 changes since (none)" "$OUT"
+if [ -f "$V2/wiki/.state/since-review.yaml" ]; then
+  echo "  PASS: since-review.yaml was created on accept"; PASS=$((PASS + 1))
+else
+  echo "  FAIL: since-review.yaml was not created"; FAIL=$((FAIL + 1))
+fi
+COUNT=$(node -e "process.stdout.write(String((require('js-yaml').load(require('fs').readFileSync('$V2/wiki/.state/since-review.yaml','utf8')).changes||[]).length))")
+assert_eq "changes is empty"          "0" "$COUNT"
+HAS_AT=$(node -e "let d=require('js-yaml').load(require('fs').readFileSync('$V2/wiki/.state/since-review.yaml','utf8')); process.stdout.write(String(typeof d.last_accepted_at === 'string' && d.last_accepted_at.endsWith('Z')))")
+assert_eq "last_accepted_at set"      "true" "$HAS_AT"
+
+# Test 5: accept after appends clears changes, bumps last_accepted_at, reports count.
+echo ""
+echo "Test 5: accept after appends"
+V5=$(make_vault vault5)
+(cd "$V5" && node "$SCRIPT" append --kind=ingest --data='{"source":"raw/a.md"}' >/dev/null)
+(cd "$V5" && node "$SCRIPT" append --kind=ingest --data='{"source":"raw/b.md"}' >/dev/null)
+OUT=$( (cd "$V5" && node "$SCRIPT" accept) )
+case "$OUT" in
+  "accepted 2 changes since "*)
+    echo "  PASS: stdout reports 2 cleared"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: expected 'accepted 2 changes since ...' — got: $OUT"
+    FAIL=$((FAIL + 1));;
+esac
+COUNT=$(node -e "process.stdout.write(String((require('js-yaml').load(require('fs').readFileSync('$V5/wiki/.state/since-review.yaml','utf8')).changes||[]).length))")
+assert_eq "changes is empty after accept" "0" "$COUNT"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
