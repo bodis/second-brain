@@ -55,10 +55,18 @@ exempt:
   - wiki/index.md
   - wiki/log.md
 required:
-  tags: { type: list[string], may_be_empty: true }
-  sources: { type: list[string], may_be_empty: false }
-  created: { type: date, format: YYYY-MM-DD }
-  updated: { type: date, format: YYYY-MM-DD }
+  tags:
+    type: list[string]
+    may_be_empty: true
+  sources:
+    type: list[string]
+    may_be_empty: false
+  created:
+    type: date
+    format: YYYY-MM-DD
+  updated:
+    type: date
+    format: YYYY-MM-DD
 unknown_keys: allowed
 YAML
   (cd "$v" && git init -q && git config user.email "t@t" && git config user.name "t" && git config commit.gpgsign false && git add . && git commit -qm "init" >/dev/null)
@@ -115,6 +123,34 @@ OUT=$( (cd "$V2" && node "$SCRIPT" --json) )
 assert_eq "sources.new === 3"     "3" "$(echo "$OUT" | json_path 'sources.new')"
 assert_eq "sources.changed === 0" "0" "$(echo "$OUT" | json_path 'sources.changed')"
 assert_eq "sources.deleted === 0" "0" "$(echo "$OUT" | json_path 'sources.deleted')"
+
+# Test 3: vault with a broken wikilink → lint.errors >= 1.
+echo ""
+echo "Test 3: lint counts derived from validate-wiki.js all --json"
+V3=$(make_vault vault3)
+mkdir -p "$V3/wiki/sources"
+cat > "$V3/wiki/sources/seed.md" <<'EOF'
+---
+tags: []
+sources: [seed.md]
+created: 2026-01-01
+updated: 2026-01-01
+---
+
+# Seed
+
+Points to [[does-not-exist]].
+EOF
+(cd "$V3" && git add . && git commit -qm "add seed" >/dev/null)
+OUT=$( (cd "$V3" && node "$SCRIPT" --json) )
+ERRS=$(echo "$OUT" | json_path 'lint.errors')
+if [ "$ERRS" -ge 1 ]; then
+  echo "  PASS: lint.errors >= 1 (got $ERRS)"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL: lint.errors expected >= 1, got $ERRS"
+  FAIL=$((FAIL + 1))
+fi
 
 echo ""
 echo "=== Results ==="

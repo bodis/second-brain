@@ -59,6 +59,7 @@ function readStateYaml(vault, relname) {
 }
 
 const STATE_SOURCES_JS = path.join(__dirname, '..', 'skills', 'ingest', 'scripts', 'state-sources.js');
+const VALIDATE_WIKI_JS = path.join(__dirname, 'validate-wiki.js');
 
 function readSources(vault) {
   const r = spawnSync('node', [STATE_SOURCES_JS, 'diff'], { cwd: vault, encoding: 'utf8' });
@@ -75,7 +76,23 @@ function readSources(vault) {
     deleted: parsed.deleted.length,
   };
 }
-function readLint(vault)           { return { errors: 0, warnings: 0 }; }
+function readLint(vault) {
+  const r = spawnSync('node', [VALIDATE_WIKI_JS, 'all', '--json'], { cwd: vault, encoding: 'utf8' });
+  // Per spec §5.4: validate-wiki non-zero is acceptable; status.js is a reporter.
+  // Only invalid/empty stdout is a problem.
+  let parsed;
+  try { parsed = JSON.parse(r.stdout || '{}'); }
+  catch (err) { die(`validate-wiki.js all --json produced invalid JSON: ${err.message}`, 2); }
+  const fmErrors    = (parsed.frontmatter?.errors    || []).length;
+  const wlBroken    = (parsed.wikilinks?.broken      || []).length;
+  const wlOrphans   = (parsed.wikilinks?.orphans     || []).length;
+  const ixDead      = (parsed.index?.dead_rows       || []).length;
+  const ixMissing   = (parsed.index?.missing_rows    || []).length;
+  return {
+    errors:   fmErrors + wlBroken + ixDead,
+    warnings: wlOrphans + ixMissing,
+  };
+}
 function readContradictions(vault) { return { unjudged_candidates: 0, unresolved: 0, present: false }; }
 function readStaleness(vault)      { return { unjudged_candidates: 0, unresolved_high: 0, unresolved_medium: 0, present: false }; }
 function readSinceReview(vault)    { return { change_count: 0, last_accepted_at: null }; }
