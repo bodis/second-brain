@@ -146,8 +146,61 @@ function emitJson(dash) {
 }
 
 function emitHuman(dash) {
-  // Filled in by Task 8.
-  process.stdout.write(JSON.stringify(dash, null, 2) + '\n');
+  const lines = [];
+  lines.push(`Second Brain — vault: ${dash.vault.name}`);
+  lines.push('─────────────────────────────────────────────');
+
+  const needsYou = [];
+  if (dash.contradictions.unresolved > 0) {
+    needsYou.push(`  Contradictions     ${dash.contradictions.unresolved} unresolved      (/second-brain:status reconcile)`);
+  }
+  const high = dash.staleness.unresolved_high;
+  const med  = dash.staleness.unresolved_medium;
+  if (high + med > 0) {
+    needsYou.push(`  Stale pages        ${high} high + ${med} medium (/second-brain:status refresh)`);
+  }
+
+  const awaiting = [];
+  if (dash.since_review.change_count > 0) {
+    const since = dash.since_review.last_accepted_at || 'never';
+    awaiting.push(`  ${dash.since_review.change_count} changes since ${since}         (/second-brain:status review)`);
+  }
+
+  const automation = [];
+  const newSrc = dash.sources.new;
+  const chgSrc = dash.sources.changed;
+  if (newSrc + chgSrc > 0) {
+    automation.push(`  Sources            ${newSrc} new in raw/, ${chgSrc} changed`);
+    automation.push(`                     hint: claude --headless -p "/second-brain:ingest"`);
+  }
+
+  const lintLine = (dash.lint.errors > 0 || dash.lint.warnings > 0)
+    ? `Lint: ${dash.lint.errors} errors, ${dash.lint.warnings} warnings           (/second-brain:lint)`
+    : null;
+
+  const anyContent = needsYou.length || awaiting.length || automation.length || lintLine;
+  if (!anyContent) {
+    lines.push('Nothing pending.');
+    process.stdout.write(lines.join('\n') + '\n');
+    return;
+  }
+  if (needsYou.length) {
+    lines.push('Needs you:');
+    lines.push(...needsYou);
+    lines.push('');
+  }
+  if (awaiting.length) {
+    lines.push('Awaiting review:');
+    lines.push(...awaiting);
+    lines.push('');
+  }
+  if (automation.length) {
+    lines.push('Automation could pick up:');
+    lines.push(...automation);
+    lines.push('');
+  }
+  if (lintLine) lines.push(lintLine);
+  process.stdout.write(lines.join('\n') + '\n');
 }
 
 function main() {

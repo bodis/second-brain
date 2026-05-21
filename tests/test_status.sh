@@ -194,6 +194,60 @@ OUT=$( (cd "$V8" && node "$SCRIPT" --json) )
 assert_eq "since_review.change_count === 5"          "5"                    "$(echo "$OUT" | json_path 'since_review.change_count')"
 assert_eq "since_review.last_accepted_at present"    "2026-05-12T08:00:00Z" "$(echo "$OUT" | json_path 'since_review.last_accepted_at')"
 
+# Test 1b: fresh vault → human mode prints "Nothing pending." after header.
+echo ""
+echo "Test 1b: fresh vault human output"
+V1b=$(make_vault vault1b)
+OUT=$( (cd "$V1b" && node "$SCRIPT") )
+case "$OUT" in
+  *"Second Brain — vault: vault1b"*"Nothing pending."*)
+    echo "  PASS: fresh-vault output prints header + Nothing pending."; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: fresh-vault output missing header or Nothing pending. — got:"; echo "$OUT"
+    FAIL=$((FAIL + 1));;
+esac
+
+# Test 2b: populated vault → human output includes sources line + lint line.
+echo ""
+echo "Test 2b: populated vault human output"
+V2b=$(make_vault vault2b)
+echo "one"   > "$V2b/raw/one.md"
+echo "two"   > "$V2b/raw/two.md"
+OUT=$( (cd "$V2b" && node "$SCRIPT") )
+case "$OUT" in
+  *"Automation could pick up"*"Sources"*"2 new"*)
+    echo "  PASS: human output shows 'Automation could pick up' + sources line"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: human output missing automation/sources line — got:"; echo "$OUT"
+    FAIL=$((FAIL + 1));;
+esac
+case "$OUT" in
+  *"Nothing pending."*)
+    echo "  FAIL: 'Nothing pending.' present despite pending sources"; FAIL=$((FAIL + 1));;
+  *)
+    echo "  PASS: 'Nothing pending.' is correctly absent"; PASS=$((PASS + 1));;
+esac
+
+# Test 9: human mode omits zero-count sections.
+echo ""
+echo "Test 9: zero sections omitted from human output"
+case "$OUT" in
+  *"Needs you:"*)
+    echo "  FAIL: 'Needs you:' header present despite zero contradictions/staleness"
+    FAIL=$((FAIL + 1));;
+  *)
+    echo "  PASS: 'Needs you:' header omitted on populated-sources-only vault"
+    PASS=$((PASS + 1));;
+esac
+case "$OUT" in
+  *"Awaiting review:"*)
+    echo "  FAIL: 'Awaiting review:' header present despite zero changes"
+    FAIL=$((FAIL + 1));;
+  *)
+    echo "  PASS: 'Awaiting review:' header omitted"
+    PASS=$((PASS + 1));;
+esac
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
