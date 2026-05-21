@@ -1,0 +1,15 @@
+schema_version: 1
+generated_by: scripts/contradictions.js
+contradictions:
+  - id: c1
+    pair: [wiki/entities/foo.md, wiki/concepts/acquisitions.md]
+    status: unresolved
+  - id: c2
+    pair: [wiki/entities/bar.md, wiki/concepts/launches.md]
+    status: unresolved
+  - id: c3
+    pair: [wiki/entities/baz.md, wiki/concepts/leadership.md]
+    status: unresolved
+  - id: c4
+    pair: [wiki/entities/qux.md, wiki/concepts/policy.md]
+    status: resolved

@@ -152,6 +152,17 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# Test 4: contradictions.yaml with 3 unresolved entries.
+echo ""
+echo "Test 4: contradictions counts from state file"
+V4="$TEST_DIR/contradictions-populated"
+cp -R "$REPO_ROOT/tests/fixtures/status/contradictions-populated" "$V4"
+(cd "$V4" && git init -q && git config user.email "t@t" && git config user.name "t" && git config commit.gpgsign false && git add . && git commit -qm "init" >/dev/null)
+OUT=$( (cd "$V4" && node "$SCRIPT" --json) )
+assert_eq "contradictions.unresolved === 3"   "3"    "$(echo "$OUT" | json_path 'contradictions.unresolved')"
+assert_eq "contradictions.present === true"   "true" "$(echo "$OUT" | json_path 'contradictions.present')"
+assert_eq "contradictions.unjudged_candidates === 0" "0" "$(echo "$OUT" | json_path 'contradictions.unjudged_candidates')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

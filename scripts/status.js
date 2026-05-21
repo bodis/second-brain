@@ -93,7 +93,16 @@ function readLint(vault) {
     warnings: wlOrphans + ixMissing,
   };
 }
-function readContradictions(vault) { return { unjudged_candidates: 0, unresolved: 0, present: false }; }
+function readContradictions(vault) {
+  const doc = readStateYaml(vault, 'contradictions.yaml');
+  if (!doc) return { unjudged_candidates: 0, unresolved: 0, present: false };
+  const entries = Array.isArray(doc.contradictions) ? doc.contradictions : [];
+  let unresolved = 0;
+  for (const e of entries) {
+    if (e && e.status === 'unresolved') unresolved += 1;
+  }
+  return { unjudged_candidates: 0, unresolved, present: true };
+}
 function readStaleness(vault)      { return { unjudged_candidates: 0, unresolved_high: 0, unresolved_medium: 0, present: false }; }
 function readSinceReview(vault)    { return { change_count: 0, last_accepted_at: null }; }
 
