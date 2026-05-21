@@ -46,11 +46,51 @@ function parseArgs(argv) {
   return args;
 }
 
+// Read a YAML file under wiki/.state/. Returns parsed object or null if absent.
+// Throws on parse errors so the caller can decide exit semantics.
+function readStateYaml(vault, relname) {
+  const abs = path.join(vault, 'wiki', '.state', relname);
+  if (!fs.existsSync(abs)) return null;
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); }
+  catch (err) { die(`wiki/.state/${relname} unreadable: ${err.message}`, 2); }
+  try { return yaml.load(text); }
+  catch (err) { die(`wiki/.state/${relname} malformed: ${err.message}`, 2); }
+}
+
+function readSources(vault)        { return { new: 0, changed: 0, deleted: 0 }; }
+function readLint(vault)           { return { errors: 0, warnings: 0 }; }
+function readContradictions(vault) { return { unjudged_candidates: 0, unresolved: 0, present: false }; }
+function readStaleness(vault)      { return { unjudged_candidates: 0, unresolved_high: 0, unresolved_medium: 0, present: false }; }
+function readSinceReview(vault)    { return { change_count: 0, last_accepted_at: null }; }
+
+function buildDashboard(vault) {
+  return {
+    vault:          { root: vault, name: path.basename(vault) },
+    sources:        readSources(vault),
+    lint:           readLint(vault),
+    contradictions: readContradictions(vault),
+    staleness:      readStaleness(vault),
+    since_review:   readSinceReview(vault),
+  };
+}
+
+function emitJson(dash) {
+  process.stdout.write(JSON.stringify(dash, null, 2) + '\n');
+}
+
+function emitHuman(dash) {
+  // Filled in by Task 8.
+  process.stdout.write(JSON.stringify(dash, null, 2) + '\n');
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const vault = findVaultRoot(process.cwd());
   if (!vault) die('not in a second-brain vault (run /second-brain:onboard first)', 2);
-  // Filled in by Task 2.
+  const dash = buildDashboard(vault);
+  if (args.json) emitJson(dash);
+  else emitHuman(dash);
 }
 
 main();

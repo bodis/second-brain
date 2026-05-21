@@ -85,6 +85,25 @@ case "$OUT" in
     FAIL=$((FAIL + 1));;
 esac
 
+# Test 1: fresh vault → --json returns stable schema with all-zero sections.
+echo ""
+echo "Test 1: fresh vault → stable JSON schema"
+V1=$(make_vault vault1)
+OUT=$( (cd "$V1" && node "$SCRIPT" --json) )
+assert_eq "sources.new === 0"                  "0"     "$(echo "$OUT" | json_path 'sources.new')"
+assert_eq "sources.changed === 0"              "0"     "$(echo "$OUT" | json_path 'sources.changed')"
+assert_eq "sources.deleted === 0"              "0"     "$(echo "$OUT" | json_path 'sources.deleted')"
+assert_eq "lint.errors === 0"                  "0"     "$(echo "$OUT" | json_path 'lint.errors')"
+assert_eq "lint.warnings === 0"                "0"     "$(echo "$OUT" | json_path 'lint.warnings')"
+assert_eq "contradictions.unresolved === 0"    "0"     "$(echo "$OUT" | json_path 'contradictions.unresolved')"
+assert_eq "contradictions.present === false"   "false" "$(echo "$OUT" | json_path 'contradictions.present')"
+assert_eq "staleness.unresolved_high === 0"    "0"     "$(echo "$OUT" | json_path 'staleness.unresolved_high')"
+assert_eq "staleness.unresolved_medium === 0"  "0"     "$(echo "$OUT" | json_path 'staleness.unresolved_medium')"
+assert_eq "staleness.present === false"        "false" "$(echo "$OUT" | json_path 'staleness.present')"
+assert_eq "since_review.change_count === 0"    "0"     "$(echo "$OUT" | json_path 'since_review.change_count')"
+assert_eq "since_review.last_accepted_at null" "null"  "$(echo "$OUT" | json_path 'since_review.last_accepted_at')"
+assert_eq "vault.name is vault1"               "vault1" "$(echo "$OUT" | json_path 'vault.name')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
