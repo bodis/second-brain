@@ -1,0 +1,24 @@
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - path: wiki/concepts/old-thing-1.md
+    signal: high
+    status: unreviewed
+  - path: wiki/concepts/old-thing-2.md
+    signal: high
+    status: unreviewed
+  - path: wiki/concepts/old-thing-3.md
+    signal: high
+    status: unreviewed
+  - path: wiki/concepts/mid-thing-1.md
+    signal: medium
+    status: unreviewed
+  - path: wiki/concepts/mid-thing-2.md
+    signal: medium
+    status: unreviewed
+  - path: wiki/concepts/low-thing.md
+    signal: low
+    status: unreviewed
+  - path: wiki/concepts/reviewed-high.md
+    signal: high
+    status: reviewed

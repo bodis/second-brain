@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * scripts/review-log.js — owner of wiki/.state/since-review.yaml.
+ *
+ * Subcommands:
+ *   append --kind=<kind> --data=<json>  Append one change entry.
+ *   show [--json]                       Print the current inbox (grouped or raw).
+ *   accept                              Truncate changes[], bump last_accepted_at.
+ *
+ * Exit codes:
+ *   0 = success
+ *   2 = unknown subcommand, missing required flag, malformed --data,
+ *       or since-review.yaml exists but malformed / on an unsupported schema_version.
+ *
+ * Vault detection: walks up for both .git/ and wiki/.state/sources.yaml,
+ * matching status.js and validate-wiki.js.
+ *
+ * Atomic write: write to a sibling tmpfile, then fs.renameSync into place.
+ * On a single-machine, single-user setup the sub-second window between
+ * concurrent appends is acceptable per spec §6.4 — no lock file in v1.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
+
+const SCHEMA_VERSION = 1;
+const GENERATED_BY = 'scripts/review-log.js';
+const STATE_FILE = 'wiki/.state/since-review.yaml';
+
+function die(msg, code = 2) {
+  process.stderr.write(`error: ${msg}\n`);
+  process.exit(code);
+}
+
+function findVaultRoot(start) {
+  let dir = path.resolve(start);
+  while (true) {
+    const hasGit = fs.existsSync(path.join(dir, '.git'));
+    const hasState = fs.existsSync(path.join(dir, 'wiki', '.state', 'sources.yaml'));
+    if (hasGit && hasState) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+}
+
+function readState(vault) {
+  const abs = path.join(vault, STATE_FILE);
+  if (!fs.existsSync(abs)) return null;
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); }
+  catch (err) { die(`${STATE_FILE} unreadable: ${err.message}`, 2); }
+  let doc;
+  try { doc = yaml.load(text, { schema: yaml.CORE_SCHEMA }); }
+  catch (err) { die(`${STATE_FILE} malformed: ${err.message}`, 2); }
+  if (!doc || typeof doc !== 'object') die(`${STATE_FILE} malformed: not a YAML mapping`, 2);
+  if (doc.schema_version !== SCHEMA_VERSION) {
+    die(`${STATE_FILE} schema_version=${doc.schema_version}, expected ${SCHEMA_VERSION}`, 2);
+  }
+  if (!Array.isArray(doc.changes)) doc.changes = [];
+  return doc;
+}
+
+function writeState(vault, doc) {
+  doc.schema_version = SCHEMA_VERSION;
+  doc.generated_by = GENERATED_BY;
+  const abs = path.join(vault, STATE_FILE);
+  const dir = path.dirname(abs);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${abs}.tmp.${process.pid}.${Date.now()}`;
+  const out = yaml.dump(doc, { indent: 2, sortKeys: false, lineWidth: -1 });
+  fs.writeFileSync(tmp, out);
+  fs.renameSync(tmp, abs);
+}
+
+function emptyState() {
+  return {
+    schema_version: SCHEMA_VERSION,
+    generated_by: GENERATED_BY,
+    last_accepted_at: null,
+    changes: [],
+  };
+}
+
+function cmdAppend(vault, args) {
+  if (!args.kind) die('--kind is required', 2);
+  if (!args.data) die('--data is required (use --data=\'{}\' for an empty payload)', 2);
+  let payload;
+  try { payload = JSON.parse(args.data); }
+  catch (err) { die(`--data is not valid JSON: ${err.message}`, 2); }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    die('--data must be a JSON object', 2);
+  }
+  const doc = readState(vault) || emptyState();
+  const entry = Object.assign({ at: nowIso(), kind: args.kind }, payload);
+  doc.changes.push(entry);
+  writeState(vault, doc);
+}
+
+function cmdShow(vault, args) {
+  const doc = readState(vault);
+  if (!doc || doc.changes.length === 0) {
+    if (args.json) {
+      process.stdout.write(JSON.stringify(doc || emptyState(), null, 2) + '\n');
+      return;
+    }
+    process.stdout.write('No review-log entries.\n');
+    return;
+  }
+  if (args.json) {
+    process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
+    return;
+  }
+  // Group by kind.
+  const groups = new Map();
+  for (const e of doc.changes) {
+    const k = e.kind || '(unknown)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
+  const lines = [];
+  lines.push(`since last accept (${doc.last_accepted_at || 'never'}): ${doc.changes.length} entries across ${groups.size} kinds`);
+  lines.push('');
+  for (const [kind, entries] of groups) {
+    lines.push(`${kind} (${entries.length}):`);
+    const shown = entries.slice(-20);
+    for (const e of shown) {
+      const { at, kind: _k, ...rest } = e;
+      lines.push(`  ${at}  ${JSON.stringify(rest)}`);
+    }
+    if (entries.length > 20) {
+      lines.push(`  ... and ${entries.length - 20} more`);
+    }
+    lines.push('');
+  }
+  process.stdout.write(lines.join('\n'));
+}
+
+function cmdAccept(vault, _args) {
+  const doc = readState(vault) || emptyState();
+  const prevCount = doc.changes.length;
+  const prevAt = doc.last_accepted_at || '(none)';
+  doc.changes = [];
+  doc.last_accepted_at = nowIso();
+  writeState(vault, doc);
+  process.stdout.write(`accepted ${prevCount} changes since ${prevAt}\n`);
+}
+
+function parseArgs(argv) {
+  const cmd = argv[0];
+  const args = { kind: null, data: null, json: false };
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--kind=')) args.kind = a.slice('--kind='.length);
+    else if (a === '--kind') args.kind = argv[++i];
+    else if (a.startsWith('--data=')) args.data = a.slice('--data='.length);
+    else if (a === '--data') args.data = argv[++i];
+    else if (a === '--json') args.json = true;
+    else die(`unknown argument: ${a}`, 2);
+  }
+  return { cmd, args };
+}
+
+function main() {
+  const { cmd, args } = parseArgs(process.argv.slice(2));
+  const vault = findVaultRoot(process.cwd());
+  if (!vault) die('not in a second-brain vault (run /second-brain:onboard first)', 2);
+  if (cmd === 'append') return cmdAppend(vault, args);
+  if (cmd === 'show')   return cmdShow(vault, args);
+  if (cmd === 'accept') return cmdAccept(vault, args);
+  die(`unknown subcommand: ${cmd}`, 2);
+}
+
+main();
