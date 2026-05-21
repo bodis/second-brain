@@ -248,6 +248,58 @@ case "$OUT" in
     PASS=$((PASS + 1));;
 esac
 
+# Test 6: malformed sources.yaml → exit 2 with helpful stderr.
+echo ""
+echo "Test 6: malformed sources.yaml"
+V6=$(make_vault vault6)
+echo "this is: not: valid: yaml: at all: ::" > "$V6/wiki/.state/sources.yaml"
+set +e
+OUT=$( (cd "$V6" && node "$SCRIPT" --json 2>&1) )
+EXIT=$?
+set -e
+assert_eq "exit 2 on malformed sources.yaml" "2" "$EXIT"
+case "$OUT" in
+  *"sources.yaml"*)
+    echo "  PASS: stderr names sources.yaml"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: stderr did not mention sources.yaml — got: $OUT"
+    FAIL=$((FAIL + 1));;
+esac
+
+# Test 7: malformed since-review.yaml → exit 2 with helpful stderr.
+echo ""
+echo "Test 7: malformed since-review.yaml"
+V7=$(make_vault vault7)
+echo "this is: not: valid: yaml: at all: ::" > "$V7/wiki/.state/since-review.yaml"
+(cd "$V7" && git add . && git commit -qm "broken" >/dev/null)
+set +e
+OUT=$( (cd "$V7" && node "$SCRIPT" --json 2>&1) )
+EXIT=$?
+set -e
+assert_eq "exit 2 on malformed since-review.yaml" "2" "$EXIT"
+case "$OUT" in
+  *"since-review.yaml"*)
+    echo "  PASS: stderr names since-review.yaml"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: stderr did not mention since-review.yaml — got: $OUT"
+    FAIL=$((FAIL + 1));;
+esac
+
+# Test 11: JSON byte-stable across two consecutive runs when state is unchanged.
+echo ""
+echo "Test 11: --json byte-stable across runs"
+V11=$(make_vault vault11)
+echo "one" > "$V11/raw/one.md"
+RUN1=$( (cd "$V11" && node "$SCRIPT" --json) )
+RUN2=$( (cd "$V11" && node "$SCRIPT" --json) )
+if [ "$RUN1" = "$RUN2" ]; then
+  echo "  PASS: two runs produced identical JSON"; PASS=$((PASS + 1))
+else
+  echo "  FAIL: --json output differed between runs:"
+  diff <(echo "$RUN1") <(echo "$RUN2") | head -20
+  FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

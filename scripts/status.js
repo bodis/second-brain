@@ -63,9 +63,10 @@ const VALIDATE_WIKI_JS = path.join(__dirname, 'validate-wiki.js');
 
 function readSources(vault) {
   const r = spawnSync('node', [STATE_SOURCES_JS, 'diff'], { cwd: vault, encoding: 'utf8' });
+  if (r.error) die(`state-sources.js failed to spawn: ${r.error.message}`, 2);
   if (r.status !== 0) {
     process.stderr.write(r.stderr || '');
-    die(`state-sources.js diff failed (exit ${r.status})`, 2);
+    die(`state-sources.js diff failed (exit ${r.status}; check wiki/.state/sources.yaml)`, 2);
   }
   let parsed;
   try { parsed = JSON.parse(r.stdout); }
@@ -78,6 +79,7 @@ function readSources(vault) {
 }
 function readLint(vault) {
   const r = spawnSync('node', [VALIDATE_WIKI_JS, 'all', '--json'], { cwd: vault, encoding: 'utf8' });
+  if (r.error) die(`validate-wiki.js failed to spawn: ${r.error.message}`, 2);
   // Per spec §5.4: validate-wiki non-zero is acceptable; status.js is a reporter.
   // Only invalid/empty stdout is a problem.
   let parsed;
