@@ -73,6 +73,68 @@ function parseArgs(argv) {
   return out;
 }
 
+function readState(vault) {
+  const abs = path.join(vault, STATE_FILE);
+  if (!fs.existsSync(abs)) return null;
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); }
+  catch (err) { die(`${STATE_FILE} unreadable: ${err.message}`, 2); }
+  let doc;
+  try { doc = yaml.load(text, { schema: yaml.CORE_SCHEMA }); }
+  catch (err) { die(`${STATE_FILE} malformed: ${err.message}`, 2); }
+  if (!doc || typeof doc !== 'object') die(`${STATE_FILE} malformed: not a YAML mapping`, 2);
+  if (doc.schema_version !== SCHEMA_VERSION) {
+    die(`${STATE_FILE} schema_version=${doc.schema_version}, expected ${SCHEMA_VERSION}`, 2);
+  }
+  if (!Array.isArray(doc.contradictions)) doc.contradictions = [];
+  return doc;
+}
+
+function emptyState() {
+  return {
+    schema_version: SCHEMA_VERSION,
+    generated_by: GENERATED_BY,
+    contradictions: [],
+  };
+}
+
+function cmdList(vault, args) {
+  const doc = readState(vault) || emptyState();
+  let entries = doc.contradictions;
+  if (args.status) {
+    const wanted = String(args.status).split(',').map(s => s.trim()).filter(Boolean);
+    entries = entries.filter(e => wanted.includes(e.status));
+  }
+  if (args.json) {
+    const out = Object.assign({}, doc, { contradictions: entries });
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    return;
+  }
+  if (entries.length === 0) {
+    process.stdout.write('No contradictions matching filter.\n');
+    return;
+  }
+  // Group by status for the human summary.
+  const groups = new Map();
+  for (const e of entries) {
+    const k = e.status || '(unknown)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(e);
+  }
+  const lines = [];
+  lines.push(`${entries.length} entries across ${groups.size} statuses`);
+  lines.push('');
+  for (const [status, list] of groups) {
+    lines.push(`${status} (${list.length}):`);
+    for (const e of list) {
+      const claim = e.judgment?.claim || '(unjudged)';
+      lines.push(`  ${e.id}  ${e.pages.join(' ⟷ ')}  — ${claim}`);
+    }
+    lines.push('');
+  }
+  process.stdout.write(lines.join('\n'));
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) die('usage: contradictions.js <subcommand> [args]', 2);
@@ -82,7 +144,7 @@ function main() {
   if (!vault) die('not in a second-brain vault (run /second-brain:onboard first)', 2);
   switch (cmd) {
     case 'candidates':   die('candidates: not implemented yet', 2);
-    case 'list':         die('list: not implemented yet', 2);
+    case 'list':         return cmdList(vault, args);
     case 'judge':        die('judge: not implemented yet', 2);
     case 'resolve':      die('resolve: not implemented yet', 2);
     case 'apply-pick':   die('apply-pick: not implemented yet', 2);

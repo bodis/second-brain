@@ -104,6 +104,66 @@ case "$OUT" in
     FAIL=$((FAIL + 1));;
 esac
 
+# Test: list on missing file → empty output, exit 0.
+echo ""
+echo "Test: list on missing file → empty output"
+V_LIST_EMPTY=$(make_vault vault-list-empty)
+set +e
+OUT=$( (cd "$V_LIST_EMPTY" && node "$SCRIPT" list 2>&1) )
+EXIT=$?
+set -e
+assert_eq "exit 0 when state file absent" "0" "$EXIT"
+
+# Test: list --json on missing file → empty contradictions array, exit 0.
+echo ""
+echo "Test: list --json on missing file → empty array"
+OUT=$( (cd "$V_LIST_EMPTY" && node "$SCRIPT" list --json 2>&1) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "list --json returns empty array" "0" "$COUNT"
+
+# Test: list --json on populated file → returns entries.
+echo ""
+echo "Test: list --json on populated file"
+V_LIST=$(make_vault vault-list)
+cat > "$V_LIST/wiki/.state/contradictions.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/contradictions.js
+contradictions:
+  - id: 2026-05-19-001
+    detected_at: 2026-05-19T10:00:00Z
+    pages: [wiki/concepts/acquisitions.md, wiki/entities/foo.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [foo], a_only_targets: [], b_only_targets: [bar] }
+    status: unjudged
+  - id: 2026-05-18-007
+    detected_at: 2026-05-18T03:00:00Z
+    pages: [wiki/concepts/acquisitions.md, wiki/entities/foo.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [foo], a_only_targets: [], b_only_targets: [bar] }
+    status: unresolved
+    judgment:
+      verdict: real-contradiction
+      at: 2026-05-18T04:00:00Z
+      claim: "Acquirer of Foo"
+      assertions: []
+      rationale: "..."
+YAML
+OUT=$( (cd "$V_LIST" && node "$SCRIPT" list --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "list --json on populated returns 2 entries" "2" "$COUNT"
+
+# Test: list --status=unjudged → filters to single entry.
+echo ""
+echo "Test: list --status filter"
+OUT=$( (cd "$V_LIST" && node "$SCRIPT" list --status=unjudged --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "list --status=unjudged returns 1 entry" "1" "$COUNT"
+
+# Test: list --status with comma-list → union filter.
+OUT=$( (cd "$V_LIST" && node "$SCRIPT" list --status=unjudged,unresolved --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "list --status comma-list returns 2 entries" "2" "$COUNT"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
