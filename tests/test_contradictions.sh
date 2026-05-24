@@ -334,6 +334,64 @@ EXIT=$?
 set -e
 assert_eq "exit 3 on second judge" "3" "$EXIT"
 
+# Helper: seed a vault with one `unresolved` entry and echo its id.
+seed_unresolved() {
+  local v="$1"
+  local id=$(seed_unjudged "$v")
+  (cd "$v" && node "$SCRIPT" judge --id="$id" --verdict=real-contradiction \
+    --data='{"claim":"c","assertions":[{"page":"wiki/concepts/alignment.md","text":"t","source":"s"}],"rationale":"r"}' >/dev/null)
+  echo "$id"
+}
+
+# Test: resolve --kind=defer on unresolved → deferred.
+echo ""
+echo "Test: resolve defer from unresolved"
+V_RD=$(make_vault vault-resolve-defer)
+ID=$(seed_unresolved "$V_RD")
+(cd "$V_RD" && node "$SCRIPT" resolve --id="$ID" --kind=defer >/dev/null)
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_RD/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status === deferred" "deferred" "$STATUS"
+HAS_AT=$(node -e "let e=require('js-yaml').load(require('fs').readFileSync('$V_RD/wiki/.state/contradictions.yaml','utf8')).contradictions[0]; process.stdout.write(String(typeof e.deferred_at === 'string'))")
+assert_eq "deferred_at populated" "true" "$HAS_AT"
+
+# Test: idempotent re-defer updates deferred_at.
+echo ""
+echo "Test: re-defer is idempotent"
+FIRST_AT=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_RD/wiki/.state/contradictions.yaml','utf8')).contradictions[0].deferred_at)")
+sleep 1
+(cd "$V_RD" && node "$SCRIPT" resolve --id="$ID" --kind=defer >/dev/null)
+SECOND_AT=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_RD/wiki/.state/contradictions.yaml','utf8')).contradictions[0].deferred_at)")
+case "$FIRST_AT" in
+  "$SECOND_AT")
+    echo "  FAIL: deferred_at did not update on re-defer"
+    FAIL=$((FAIL + 1));;
+  *)
+    echo "  PASS: deferred_at updated on re-defer"
+    PASS=$((PASS + 1));;
+esac
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_RD/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status stays deferred" "deferred" "$STATUS"
+
+# Test: resolve --kind=defer on unjudged → exit 3.
+echo ""
+echo "Test: resolve defer on unjudged → exit 3"
+V_RU=$(make_vault vault-resolve-unjudged)
+ID=$(seed_unjudged "$V_RU")
+set +e
+(cd "$V_RU" && node "$SCRIPT" resolve --id="$ID" --kind=defer >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 3 on invalid transition" "3" "$EXIT"
+
+# Test: resolve --kind=pick-a → exit 2 (unsupported kind).
+echo ""
+echo "Test: resolve unsupported kind → exit 2"
+set +e
+(cd "$V_RU" && node "$SCRIPT" resolve --id="$ID" --kind=pick-a >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 2 on unsupported kind" "2" "$EXIT"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

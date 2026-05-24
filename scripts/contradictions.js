@@ -490,6 +490,25 @@ function cmdJudge(vault, args) {
   process.stdout.write(`${args.id}: ${entry.status}\n`);
 }
 
+function cmdResolve(vault, args) {
+  if (!args.id) die('resolve: --id is required', 2);
+  if (!args.kind) die('resolve: --kind is required', 2);
+  if (args.kind !== 'defer') {
+    die(`resolve: unsupported --kind ${args.kind} (v1 only supports defer; picks flow through apply-pick / apply-accept)`, 2);
+  }
+  const doc = readState(vault);
+  if (!doc) die(`resolve: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`resolve: id ${args.id} not found`, 3);
+  if (entry.status !== 'unresolved' && entry.status !== 'deferred') {
+    die(`resolve: entry ${args.id} status is ${entry.status}, expected unresolved or deferred`, 3);
+  }
+  entry.status = 'deferred';
+  entry.deferred_at = nowIso();
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: deferred\n`);
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) die('usage: contradictions.js <subcommand> [args]', 2);
@@ -501,7 +520,7 @@ function main() {
     case 'candidates':   return cmdCandidates(vault, args);
     case 'list':         return cmdList(vault, args);
     case 'judge':        return cmdJudge(vault, args);
-    case 'resolve':      die('resolve: not implemented yet', 2);
+    case 'resolve':      return cmdResolve(vault, args);
     case 'apply-pick':   die('apply-pick: not implemented yet', 2);
     case 'apply-accept': die('apply-accept: not implemented yet', 2);
     default:             die(`unknown subcommand: ${cmd}`, 2);
