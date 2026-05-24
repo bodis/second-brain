@@ -293,6 +293,47 @@ HAS_FILE="no"
 [ -f "$V_JSON/wiki/.state/contradictions.yaml" ] && HAS_FILE="yes"
 assert_eq "yaml not created in --json mode" "no" "$HAS_FILE"
 
+# Helper: seed a vault with one `unjudged` entry and echo its id.
+seed_unjudged() {
+  local v="$1"
+  cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$v/wiki/concepts/"
+  (cd "$v" && git add . && git commit -qm "fixture content")
+  (cd "$v" && node "$SCRIPT" candidates --scope=wiki/ >/dev/null)
+  node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$v/wiki/.state/contradictions.yaml','utf8')).contradictions[0].id)"
+}
+
+# Test: judge --verdict=real-contradiction transitions unjudged → unresolved.
+echo ""
+echo "Test: judge real-contradiction"
+V_JR=$(make_vault vault-judge-real)
+ID=$(seed_unjudged "$V_JR")
+(cd "$V_JR" && node "$SCRIPT" judge --id="$ID" --verdict=real-contradiction \
+  --data='{"claim":"Acquirer of foo","assertions":[{"page":"wiki/concepts/alignment.md","text":"first claim","source":"raw/source-a.md"},{"page":"wiki/concepts/ai-alignment.md","text":"second claim","source":"raw/source-b.md"}],"rationale":"Both pages take different positions."}' >/dev/null)
+STATUS=$(node -e "let d=require('js-yaml').load(require('fs').readFileSync('$V_JR/wiki/.state/contradictions.yaml','utf8')); process.stdout.write(d.contradictions[0].status)")
+assert_eq "status === unresolved" "unresolved" "$STATUS"
+CLAIM=$(node -e "let d=require('js-yaml').load(require('fs').readFileSync('$V_JR/wiki/.state/contradictions.yaml','utf8')); process.stdout.write(d.contradictions[0].judgment.claim)")
+assert_eq "claim populated" "Acquirer of foo" "$CLAIM"
+
+# Test: judge --verdict=not-a-contradiction.
+echo ""
+echo "Test: judge not-a-contradiction"
+V_JN=$(make_vault vault-judge-not)
+ID=$(seed_unjudged "$V_JN")
+(cd "$V_JN" && node "$SCRIPT" judge --id="$ID" --verdict=not-a-contradiction \
+  --data='{"rationale":"Both pages are just listing common parents."}' >/dev/null)
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_JN/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status === not-a-contradiction" "not-a-contradiction" "$STATUS"
+
+# Test: judge on already-judged entry → exit 3.
+echo ""
+echo "Test: judge on already-judged → exit 3"
+set +e
+(cd "$V_JN" && node "$SCRIPT" judge --id="$ID" --verdict=real-contradiction \
+  --data='{"claim":"x","assertions":[{"page":"a","text":"b","source":"c"}],"rationale":"r"}' >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 3 on second judge" "3" "$EXIT"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

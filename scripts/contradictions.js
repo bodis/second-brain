@@ -438,6 +438,58 @@ function cmdCandidates(vault, args) {
   process.stdout.write(`enqueued ${added} new, skipped ${skipped} already-known\n`);
 }
 
+function findEntry(doc, id) {
+  return doc.contradictions.find(e => e.id === id) || null;
+}
+
+function cmdJudge(vault, args) {
+  if (!args.id) die('judge: --id is required', 2);
+  if (!args.verdict) die('judge: --verdict is required', 2);
+  if (!args.data) die('judge: --data is required', 2);
+  if (args.verdict !== 'real-contradiction' && args.verdict !== 'not-a-contradiction') {
+    die(`judge: --verdict must be 'real-contradiction' or 'not-a-contradiction', got ${args.verdict}`, 2);
+  }
+  let payload;
+  try { payload = JSON.parse(args.data); }
+  catch (err) { die(`judge: --data is not valid JSON: ${err.message}`, 2); }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    die('judge: --data must be a JSON object', 2);
+  }
+  const doc = readState(vault);
+  if (!doc) die(`judge: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`judge: id ${args.id} not found`, 3);
+  if (entry.status !== 'unjudged') {
+    die(`judge: entry ${args.id} status is ${entry.status}, expected unjudged`, 3);
+  }
+  // Validate payload shape per verdict.
+  const judgment = { verdict: args.verdict, at: nowIso() };
+  if (args.verdict === 'real-contradiction') {
+    if (typeof payload.claim !== 'string' || !payload.claim) {
+      die('judge: --data.claim must be a non-empty string', 2);
+    }
+    if (!Array.isArray(payload.assertions) || payload.assertions.length === 0) {
+      die('judge: --data.assertions must be a non-empty array', 2);
+    }
+    if (typeof payload.rationale !== 'string' || !payload.rationale) {
+      die('judge: --data.rationale must be a non-empty string', 2);
+    }
+    judgment.claim = payload.claim;
+    judgment.assertions = payload.assertions;
+    judgment.rationale = payload.rationale;
+    entry.status = 'unresolved';
+  } else {
+    if (typeof payload.rationale !== 'string' || !payload.rationale) {
+      die('judge: --data.rationale must be a non-empty string', 2);
+    }
+    judgment.rationale = payload.rationale;
+    entry.status = 'not-a-contradiction';
+  }
+  entry.judgment = judgment;
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: ${entry.status}\n`);
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) die('usage: contradictions.js <subcommand> [args]', 2);
@@ -448,7 +500,7 @@ function main() {
   switch (cmd) {
     case 'candidates':   return cmdCandidates(vault, args);
     case 'list':         return cmdList(vault, args);
-    case 'judge':        die('judge: not implemented yet', 2);
+    case 'judge':        return cmdJudge(vault, args);
     case 'resolve':      die('resolve: not implemented yet', 2);
     case 'apply-pick':   die('apply-pick: not implemented yet', 2);
     case 'apply-accept': die('apply-accept: not implemented yet', 2);
