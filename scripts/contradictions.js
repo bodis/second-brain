@@ -641,6 +641,63 @@ function cmdApplyPick(vault, args) {
   process.stdout.write(`${sha}\n`);
 }
 
+function addContradictsRelation(absPath, otherPage) {
+  let appended = false;
+  updateFrontmatter(absPath, (fm) => {
+    if (!fm.relations || typeof fm.relations !== 'object') fm.relations = {};
+    const list = Array.isArray(fm.relations.contradicts) ? [...fm.relations.contradicts] : [];
+    if (!list.includes(otherPage)) {
+      list.push(otherPage);
+      appended = true;
+    }
+    fm.relations.contradicts = list;
+    fm.updated = todayDate();
+  });
+  return appended;
+}
+
+function cmdApplyAccept(vault, args) {
+  if (!args.id) die('apply-accept: --id is required', 2);
+  const doc = readState(vault);
+  if (!doc) die(`apply-accept: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`apply-accept: id ${args.id} not found`, 3);
+  if (entry.status !== 'unresolved' && entry.status !== 'deferred') {
+    die(`apply-accept: entry ${args.id} status is ${entry.status}, expected unresolved or deferred`, 3);
+  }
+  const [a, b] = entry.pages;
+  const aAbs = path.join(vault, a);
+  const bAbs = path.join(vault, b);
+  if (!fs.existsSync(aAbs)) die(`apply-accept: page not found: ${a}`, 3);
+  if (!fs.existsSync(bAbs)) die(`apply-accept: page not found: ${b}`, 3);
+
+  addContradictsRelation(aAbs, b);
+  addContradictsRelation(bAbs, a);
+
+  const claim = entry.judgment?.claim || '(unknown)';
+  const commitMsg = `reconcile: accept-disagreement on ${claim}`;
+  const add = run(vault, 'git', ['add', a, b]);
+  if (add.status !== 0) die(`git add failed: ${add.stderr}`, 2);
+  const commit = run(vault, 'git', ['commit', '-m', commitMsg]);
+  if (commit.status !== 0) die(`git commit failed: ${commit.stderr}`, 2);
+
+  const check = validateWikiAll(vault);
+  if (check.status === 2) {
+    revertHead(vault);
+    process.stderr.write(`apply-accept: validate-wiki structural failure — reverted\n${check.stderr}`);
+    process.exit(2);
+  }
+  const sha = gitHeadSha(vault);
+
+  entry.status = 'accepted-disagreement';
+  entry.resolution = {
+    at: nowIso(),
+    commit: sha,
+  };
+  writeState(vault, doc);
+  process.stdout.write(`${sha}\n`);
+}
+
 function cmdResolve(vault, args) {
   if (!args.id) die('resolve: --id is required', 2);
   if (!args.kind) die('resolve: --kind is required', 2);
@@ -673,7 +730,7 @@ function main() {
     case 'judge':        return cmdJudge(vault, args);
     case 'resolve':      return cmdResolve(vault, args);
     case 'apply-pick':   return cmdApplyPick(vault, args);
-    case 'apply-accept': die('apply-accept: not implemented yet', 2);
+    case 'apply-accept': return cmdApplyAccept(vault, args);
     default:             die(`unknown subcommand: ${cmd}`, 2);
   }
 }

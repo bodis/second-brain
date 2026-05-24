@@ -524,6 +524,87 @@ case "$HEAD_MSG" in
 esac
 rm -f "$TMP"
 
+# Helper: seed a vault for apply-accept — fixture + one unresolved entry,
+# pages [acquisitions, foo].
+seed_apply_accept() {
+  local v="$1"
+  cp -a "$REPO_ROOT/tests/fixtures/contradictions/apply-accept-input/wiki/." "$v/wiki/"
+  (cd "$v" && git add . && git commit -qm "fixture content")
+  cat > "$v/wiki/.state/contradictions.yaml" <<YAML
+schema_version: 1
+generated_by: scripts/contradictions.js
+contradictions:
+  - id: 2026-05-24-001
+    detected_at: 2026-05-24T10:00:00Z
+    pages: [wiki/concepts/acquisitions.md, wiki/entities/foo.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [foo], a_only_targets: [], b_only_targets: [bar] }
+    status: unresolved
+    judgment:
+      verdict: real-contradiction
+      at: 2026-05-24T11:00:00Z
+      claim: "Acquirer of Foo"
+      assertions:
+        - page: wiki/entities/foo.md
+          text: "Foo was acquired by Bar in 2023."
+          source: raw/article-a.md
+        - page: wiki/concepts/acquisitions.md
+          text: "Foo was acquired by Baz in 2024."
+          source: raw/article-b.md
+      rationale: "Two pages, different acquirers."
+YAML
+  (cd "$v" && git add wiki/.state/contradictions.yaml && git commit -qm "seed contradiction")
+  echo "2026-05-24-001"
+}
+
+# Test: apply-accept happy path — both pages gain relations.contradicts,
+# entry transitions to accepted-disagreement, one commit.
+echo ""
+echo "Test: apply-accept happy path"
+V_AA=$(make_vault vault-apply-accept)
+ID=$(seed_apply_accept "$V_AA")
+(cd "$V_AA" && node "$SCRIPT" apply-accept --id="$ID" >/dev/null)
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_AA/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status === accepted-disagreement" "accepted-disagreement" "$STATUS"
+# Both pages got relations.contradicts.
+FOO_CONTRADICTS=$(node -e "let fm=require('js-yaml').load(require('fs').readFileSync('$V_AA/wiki/entities/foo.md','utf8').match(/^---\n([\s\S]*?)\n---/)[1]); process.stdout.write(JSON.stringify(fm.relations?.contradicts || []))")
+case "$FOO_CONTRADICTS" in
+  *"wiki/concepts/acquisitions.md"*) echo "  PASS: foo.md gained relations.contradicts"; PASS=$((PASS+1));;
+  *) echo "  FAIL: foo.md relations.contradicts: $FOO_CONTRADICTS"; FAIL=$((FAIL+1));;
+esac
+ACQ_CONTRADICTS=$(node -e "let fm=require('js-yaml').load(require('fs').readFileSync('$V_AA/wiki/concepts/acquisitions.md','utf8').match(/^---\n([\s\S]*?)\n---/)[1]); process.stdout.write(JSON.stringify(fm.relations?.contradicts || []))")
+case "$ACQ_CONTRADICTS" in
+  *"wiki/entities/foo.md"*) echo "  PASS: acquisitions.md gained relations.contradicts"; PASS=$((PASS+1));;
+  *) echo "  FAIL: acquisitions.md relations.contradicts: $ACQ_CONTRADICTS"; FAIL=$((FAIL+1));;
+esac
+COMMIT_COUNT=$(cd "$V_AA" && git log --grep "reconcile: accept-disagreement" --oneline | wc -l | tr -d ' ')
+assert_eq "exactly one accept commit" "1" "$COMMIT_COUNT"
+
+# Test: apply-accept idempotent — re-running adds no duplicate target.
+echo ""
+echo "Test: apply-accept second call is a no-op on the same entry → exit 3"
+set +e
+(cd "$V_AA" && node "$SCRIPT" apply-accept --id="$ID" >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "second apply-accept exits 3 (entry already accepted-disagreement)" "3" "$EXIT"
+
+# Test: apply-accept post-check revert — same pattern as apply-pick:
+# pre-stage a dead index row to force validate-wiki exit 2.
+echo ""
+echo "Test: apply-accept post-check revert"
+V_AR=$(make_vault vault-apply-accept-revert)
+ID=$(seed_apply_accept "$V_AR")
+echo "- [[wiki/concepts/nonexistent]]" >> "$V_AR/wiki/index.md"
+(cd "$V_AR" && git add wiki/index.md && git commit -qm "stage dead index row")
+set +e
+(cd "$V_AR" && node "$SCRIPT" apply-accept --id="$ID" >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 2 on post-check structural failure" "2" "$EXIT"
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_AR/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status unchanged after revert" "unresolved" "$STATUS"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
