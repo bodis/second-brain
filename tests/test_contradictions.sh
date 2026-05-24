@@ -164,6 +164,25 @@ OUT=$( (cd "$V_LIST" && node "$SCRIPT" list --status=unjudged,unresolved --json)
 COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
 assert_eq "list --status comma-list returns 2 entries" "2" "$COUNT"
 
+# Test: Signal 1 conflicting-relations on a fixture vault.
+echo ""
+echo "Test: Signal 1 conflicting-relations"
+V_S1=$(make_vault vault-signal-1)
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$V_S1/wiki/concepts/"
+(cd "$V_S1" && git add . && git commit -qm "fixture content")
+(cd "$V_S1" && node "$SCRIPT" candidates --scope=wiki/ >/dev/null)
+OUT=$( (cd "$V_S1" && node "$SCRIPT" list --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "Signal 1 enqueues one candidate" "1" "$COUNT"
+SIGNAL=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].signal)})")
+assert_eq "signal === conflicting-relations" "conflicting-relations" "$SIGNAL"
+RELATION=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].signal_data.relation)})")
+assert_eq "signal_data.relation === refines" "refines" "$RELATION"
+SHARED=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].signal_data.shared_targets.join(','))})")
+assert_eq "shared_targets includes ethics" "wiki/concepts/ethics.md" "$SHARED"
+STATUS=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].status)})")
+assert_eq "status === unjudged" "unjudged" "$STATUS"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

@@ -139,6 +139,155 @@ function cmdList(vault, args) {
   process.stdout.write(lines.join('\n'));
 }
 
+function nowIso() {
+  return new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+}
+
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Read the YAML frontmatter block at the top of a markdown file. Returns the
+// parsed object, or null if no fenced block.
+function readFrontmatter(absPath) {
+  let text;
+  try { text = fs.readFileSync(absPath, 'utf8'); }
+  catch { return null; }
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) return null;
+  try { return yaml.load(m[1], { schema: yaml.CORE_SCHEMA }); }
+  catch { return null; }
+}
+
+// Walk wiki/ and return vault-relative .md paths under the four content dirs.
+function* walkWikiMarkdown(vault) {
+  const root = path.join(vault, 'wiki');
+  const subdirs = ['entities', 'concepts', 'synthesis', 'sources'];
+  for (const sub of subdirs) {
+    const dir = path.join(root, sub);
+    if (!fs.existsSync(dir)) continue;
+    const stack = [dir];
+    while (stack.length) {
+      const d = stack.pop();
+      for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+        if (ent.name.startsWith('.')) continue;
+        const full = path.join(d, ent.name);
+        if (ent.isDirectory()) stack.push(full);
+        else if (ent.isFile() && ent.name.endsWith('.md')) {
+          yield path.relative(vault, full).split(path.sep).join('/');
+        }
+      }
+    }
+  }
+}
+
+// Return the lexically-sorted pair [a, b] (a < b).
+function pairKey(a, b) {
+  return a < b ? [a, b] : [b, a];
+}
+
+// Allocate the next ID for today's date. Reads existing entries, finds the
+// highest NNN for today, returns max+1 zero-padded to 3 digits.
+function allocateId(doc) {
+  const today = todayDate();
+  const prefix = `${today}-`;
+  let maxN = 0;
+  for (const e of doc.contradictions) {
+    if (typeof e.id === 'string' && e.id.startsWith(prefix)) {
+      const n = parseInt(e.id.slice(prefix.length), 10);
+      if (Number.isInteger(n) && n > maxN) maxN = n;
+    }
+  }
+  const next = String(maxN + 1).padStart(3, '0');
+  return `${today}-${next}`;
+}
+
+// Atomic write: tmpfile + rename.
+function writeState(vault, doc) {
+  doc.schema_version = SCHEMA_VERSION;
+  doc.generated_by = GENERATED_BY;
+  const abs = path.join(vault, STATE_FILE);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  const tmp = `${abs}.tmp.${process.pid}.${Date.now()}`;
+  const out = yaml.dump(doc, { indent: 2, sortKeys: false, lineWidth: -1 });
+  fs.writeFileSync(tmp, out);
+  fs.renameSync(tmp, abs);
+}
+
+// Compute Signal 1 candidates: pairs of pages sharing a relations.<R> key,
+// where their value lists partly overlap and partly diverge.
+// Returns array of { pages: [a, b], signal: 'conflicting-relations', signal_data }.
+function signalConflictingRelations(vault, pagesInScope) {
+  const fmCache = new Map(); // page → relations dict
+  for (const p of pagesInScope) {
+    const fm = readFrontmatter(path.join(vault, p));
+    const relations = (fm && typeof fm.relations === 'object' && fm.relations) || null;
+    fmCache.set(p, relations);
+  }
+  const candidates = [];
+  const sortedPages = [...pagesInScope].sort();
+  for (let i = 0; i < sortedPages.length; i++) {
+    const a = sortedPages[i];
+    const relA = fmCache.get(a);
+    if (!relA) continue;
+    for (let j = i + 1; j < sortedPages.length; j++) {
+      const b = sortedPages[j];
+      const relB = fmCache.get(b);
+      if (!relB) continue;
+      for (const key of Object.keys(relA)) {
+        if (!Array.isArray(relA[key]) || !Array.isArray(relB[key])) continue;
+        const setA = new Set(relA[key]);
+        const setB = new Set(relB[key]);
+        const shared = [...setA].filter(t => setB.has(t)).sort();
+        const aOnly  = [...setA].filter(t => !setB.has(t)).sort();
+        const bOnly  = [...setB].filter(t => !setA.has(t)).sort();
+        if (shared.length > 0 && (aOnly.length > 0 || bOnly.length > 0)) {
+          candidates.push({
+            pages: [a, b], // already sorted (a < b)
+            signal: 'conflicting-relations',
+            signal_data: {
+              relation: key,
+              shared_targets: shared,
+              a_only_targets: aOnly,
+              b_only_targets: bOnly,
+            },
+          });
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+function cmdCandidates(vault, args) {
+  const scope = args.scope || 'wiki/';
+  // For now (Task 3): only support directory scope; page-list + neighbour
+  // expansion lands in Task 6.
+  if (scope.includes(',') || scope.endsWith('.md')) {
+    die('candidates: page-list scope not implemented yet (Task 6)', 2);
+  }
+  const pages = [...walkWikiMarkdown(vault)];
+  const candidates = signalConflictingRelations(vault, pages);
+  // Enqueue: add each candidate as a new entry with status: unjudged.
+  // (Dedup against existing entries is Task 5.)
+  const doc = readState(vault) || emptyState();
+  let added = 0;
+  for (const c of candidates) {
+    const id = allocateId(doc);
+    doc.contradictions.push({
+      id,
+      detected_at: nowIso(),
+      pages: c.pages,
+      signal: c.signal,
+      signal_data: c.signal_data,
+      status: 'unjudged',
+    });
+    added += 1;
+  }
+  if (added > 0) writeState(vault, doc);
+  process.stdout.write(`enqueued ${added} new\n`);
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) die('usage: contradictions.js <subcommand> [args]', 2);
@@ -147,7 +296,7 @@ function main() {
   const vault = findVaultRoot(process.cwd());
   if (!vault) die('not in a second-brain vault (run /second-brain:onboard first)', 2);
   switch (cmd) {
-    case 'candidates':   die('candidates: not implemented yet', 2);
+    case 'candidates':   return cmdCandidates(vault, args);
     case 'list':         return cmdList(vault, args);
     case 'judge':        die('judge: not implemented yet', 2);
     case 'resolve':      die('resolve: not implemented yet', 2);
