@@ -214,6 +214,85 @@ function writeState(vault, doc) {
   fs.renameSync(tmp, abs);
 }
 
+const SHARED_LINK_THRESHOLD = 5;
+
+// Extract all [[wikilink]] tokens from body prose (excluding the frontmatter
+// fence). Returns vault-relative `.md` paths, resolved under the bare-name
+// (entities/concepts/synthesis/sources) and `wiki/...` rules.
+function extractBodyWikilinks(vault, page) {
+  const abs = path.join(vault, page);
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); }
+  catch { return new Set(); }
+  // Strip leading frontmatter block, if any.
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  const out = new Set();
+  // Match [[target]] or [[target|alias]]; capture target.
+  const re = /\[\[([^\]\|]+?)(?:\|[^\]]+)?\]\]/g;
+  let m;
+  while ((m = re.exec(body))) {
+    const raw = m[1].trim();
+    const resolved = resolveWikilinkTarget(vault, raw);
+    if (resolved) out.add(resolved);
+  }
+  return out;
+}
+
+// Resolve a wikilink token to a vault-relative .md path under the same three
+// rules validate-wiki.js wikilinks uses: bare name (search the four content
+// dirs), `wiki/...` path, `src/documentation/...` path.
+function resolveWikilinkTarget(vault, token) {
+  // Strip a trailing .md to normalise.
+  const t = token.endsWith('.md') ? token.slice(0, -3) : token;
+  // wiki/... and src/documentation/... paths land directly.
+  if (t.startsWith('wiki/') || t.startsWith('src/documentation/')) {
+    const candidate = t + '.md';
+    if (fs.existsSync(path.join(vault, candidate))) return candidate;
+    return null;
+  }
+  // Bare-name: search the four content dirs in order.
+  for (const sub of ['entities', 'concepts', 'synthesis', 'sources']) {
+    const candidate = `wiki/${sub}/${t}.md`;
+    if (fs.existsSync(path.join(vault, candidate))) return candidate;
+  }
+  return null;
+}
+
+function signalSharedEntityProse(vault, pagesInScope) {
+  const linkCache = new Map(); // page → Set<resolved>
+  for (const p of pagesInScope) {
+    linkCache.set(p, extractBodyWikilinks(vault, p));
+  }
+  const candidates = [];
+  const sortedPages = [...pagesInScope].sort();
+  for (let i = 0; i < sortedPages.length; i++) {
+    const a = sortedPages[i];
+    const linksA = linkCache.get(a);
+    if (!linksA || linksA.size === 0) continue;
+    for (let j = i + 1; j < sortedPages.length; j++) {
+      const b = sortedPages[j];
+      const linksB = linkCache.get(b);
+      if (!linksB || linksB.size === 0) continue;
+      const shared = [...linksA].filter(t => linksB.has(t));
+      if (shared.length < SHARED_LINK_THRESHOLD) continue;
+      const sharedEntities = shared.filter(t => t.startsWith('wiki/entities/')).sort();
+      if (sharedEntities.length === 0) continue;
+      // Emit one candidate per shared entity.
+      for (const entity of sharedEntities) {
+        candidates.push({
+          pages: [a, b], // already sorted
+          signal: 'shared-entity-prose',
+          signal_data: {
+            entity,
+            shared_links: shared.length,
+          },
+        });
+      }
+    }
+  }
+  return candidates;
+}
+
 // Compute Signal 1 candidates: pairs of pages sharing a relations.<R> key,
 // where their value lists partly overlap and partly diverge.
 // Returns array of { pages: [a, b], signal: 'conflicting-relations', signal_data }.
@@ -267,7 +346,10 @@ function cmdCandidates(vault, args) {
     die('candidates: page-list scope not implemented yet (Task 6)', 2);
   }
   const pages = [...walkWikiMarkdown(vault)];
-  const candidates = signalConflictingRelations(vault, pages);
+  const candidates = [
+    ...signalConflictingRelations(vault, pages),
+    ...signalSharedEntityProse(vault, pages),
+  ];
   // Enqueue: add each candidate as a new entry with status: unjudged.
   // (Dedup against existing entries is Task 5.)
   const doc = readState(vault) || emptyState();

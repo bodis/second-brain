@@ -191,6 +191,31 @@ assert_eq "shared_targets includes ethics" "wiki/concepts/ethics.md" "$SHARED"
 STATUS=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].status)})")
 assert_eq "status === unjudged" "unjudged" "$STATUS"
 
+# Test: Signal 2 shared-entity-prose on a fixture vault.
+echo ""
+echo "Test: Signal 2 shared-entity-prose"
+V_S2=$(make_vault vault-signal-2)
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-2-shared-entity-prose/wiki/concepts/." "$V_S2/wiki/concepts/"
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-2-shared-entity-prose/wiki/entities/." "$V_S2/wiki/entities/"
+(cd "$V_S2" && git add . && git commit -qm "fixture content")
+(cd "$V_S2" && node "$SCRIPT" candidates --scope=wiki/ >/dev/null)
+OUT=$( (cd "$V_S2" && node "$SCRIPT" list --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions.length))})")
+assert_eq "Signal 2 enqueues 5 candidates (one per shared entity)" "5" "$COUNT"
+SIGNAL=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(JSON.parse(d).contradictions[0].signal)})")
+assert_eq "signal === shared-entity-prose" "shared-entity-prose" "$SIGNAL"
+ENTITY=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{let e=JSON.parse(d).contradictions[0]; process.stdout.write(e.signal_data.entity)})")
+case "$ENTITY" in
+  wiki/entities/*.md)
+    echo "  PASS: signal_data.entity points at an entity page"
+    PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: signal_data.entity malformed: $ENTITY"
+    FAIL=$((FAIL + 1));;
+esac
+SHARED=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions[0].signal_data.shared_links))})")
+assert_eq "shared_links === 5" "5" "$SHARED"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
