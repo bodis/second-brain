@@ -235,6 +235,51 @@ PAGES=$(node -e "process.stdout.write(JSON.stringify(require('js-yaml').load(req
 SORTED=$(node -e "let p=$PAGES; process.stdout.write(JSON.stringify([...p].sort()))")
 assert_eq "pages array is sorted" "$SORTED" "$PAGES"
 
+# Test: --scope=<single-page> expands one hop and surfaces a candidate
+# that spans the scope boundary.
+echo ""
+echo "Test: page-list scope with one-hop expansion"
+V_SCOPE=$(make_vault vault-scope)
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$V_SCOPE/wiki/concepts/"
+(cd "$V_SCOPE" && git add . && git commit -qm "fixture content")
+# Scope only one of the two pages; the other should be picked up via the
+# shared `refines: ethics` neighbour link.
+(cd "$V_SCOPE" && node "$SCRIPT" candidates --scope=wiki/concepts/alignment.md >/dev/null)
+COUNT=$(node -e "process.stdout.write(String(require('js-yaml').load(require('fs').readFileSync('$V_SCOPE/wiki/.state/contradictions.yaml','utf8')).contradictions.length))")
+assert_eq "scoped-with-expansion enqueues 1 candidate" "1" "$COUNT"
+
+# Test: neighbour expansion cap (K=50).
+echo ""
+echo "Test: neighbour expansion cap"
+V_CAP=$(make_vault vault-cap)
+# Build a hub page with 60 outbound wikilinks; expansion must cap at K=50
+# and emit a warning to stderr (still exit 0).
+node -e '
+const fs=require("fs"); const path=require("path"); const v=process.argv[1];
+const lines=["---","tags: []","sources: [raw/x.md]","created: 2026-04-01","updated: 2026-04-01","---","# Hub",""];
+for (let i=0;i<60;i++) {
+  const slug = `e${String(i).padStart(3,"0")}`;
+  lines.push(`Link to [[${slug}]].`);
+  fs.writeFileSync(path.join(v,`wiki/entities/${slug}.md`),
+    `---\ntags: []\nsources: [raw/x.md]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# ${slug}\n`);
+}
+fs.writeFileSync(path.join(v,"wiki/concepts/hub.md"), lines.join("\n")+"\n");
+' "$V_CAP"
+(cd "$V_CAP" && git add . && git commit -qm "hub fixture")
+set +e
+ERR=$( (cd "$V_CAP" && node "$SCRIPT" candidates --scope=wiki/concepts/hub.md 2>&1 >/dev/null) )
+EXIT=$?
+set -e
+assert_eq "exit 0 even when cap is hit" "0" "$EXIT"
+case "$ERR" in
+  *"truncated"*|*"cap"*|*"K=50"*)
+    echo "  PASS: stderr mentions the cap"
+    PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: stderr did not mention cap — got: $ERR"
+    FAIL=$((FAIL + 1));;
+esac
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

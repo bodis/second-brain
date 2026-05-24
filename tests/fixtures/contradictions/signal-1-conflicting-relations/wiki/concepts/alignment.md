@@ -9,4 +9,4 @@ relations:
 
 # Alignment
 
-Body content referencing [[ethics]] and [[rlhf]].
+Body content referencing [[ethics]] and [[rlhf]]. See also [[ai-alignment]].

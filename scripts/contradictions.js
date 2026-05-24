@@ -348,12 +348,64 @@ function candidateKey(c) {
   return JSON.stringify([c.pages, c.signal, sd]);
 }
 
+const NEIGHBOUR_CAP = 50;
+
+// Given a set of seed pages, expand by one hop through outbound wikilinks
+// (body prose) and frontmatter relations targets. Cap at NEIGHBOUR_CAP total
+// pages (seeds + neighbours). Returns the capped page set + a `truncated` bool.
+function expandOneHop(vault, seeds) {
+  const out = new Set(seeds);
+  const visited = new Set();
+  let truncated = false;
+  for (const seed of seeds) {
+    if (visited.has(seed)) continue;
+    visited.add(seed);
+    const links = extractBodyWikilinks(vault, seed);
+    const fm = readFrontmatter(path.join(vault, seed));
+    if (fm && typeof fm.relations === 'object' && fm.relations) {
+      for (const targets of Object.values(fm.relations)) {
+        if (!Array.isArray(targets)) continue;
+        for (const t of targets) {
+          if (typeof t !== 'string') continue;
+          const r = resolveWikilinkTarget(vault, t);
+          if (r) links.add(r);
+        }
+      }
+    }
+    for (const link of links) {
+      if (out.size >= NEIGHBOUR_CAP) {
+        truncated = true;
+        break;
+      }
+      out.add(link);
+    }
+    if (truncated) break;
+  }
+  return { pages: [...out], truncated };
+}
+
 function cmdCandidates(vault, args) {
   const scope = args.scope || 'wiki/';
-  if (scope.includes(',') || scope.endsWith('.md')) {
-    die('candidates: page-list scope not implemented yet (Task 6)', 2);
+  let pages;
+  let truncated = false;
+  if (scope.endsWith('.md') || scope.includes(',')) {
+    // Page-list scope: comma-separated vault-relative .md paths.
+    const seeds = scope.split(',').map(s => s.trim()).filter(Boolean);
+    for (const s of seeds) {
+      if (!s.endsWith('.md') || !fs.existsSync(path.join(vault, s))) {
+        die(`candidates: page not found in vault: ${s}`, 3);
+      }
+    }
+    const exp = expandOneHop(vault, seeds);
+    pages = exp.pages;
+    truncated = exp.truncated;
+  } else {
+    // Directory scope: walk wiki/ content dirs.
+    pages = [...walkWikiMarkdown(vault)];
   }
-  const pages = [...walkWikiMarkdown(vault)];
+  if (truncated) {
+    process.stderr.write(`warning: neighbour expansion truncated at K=${NEIGHBOUR_CAP}\n`);
+  }
   const fresh = [
     ...signalConflictingRelations(vault, pages),
     ...signalSharedEntityProse(vault, pages),
