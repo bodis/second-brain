@@ -280,6 +280,19 @@ case "$ERR" in
     FAIL=$((FAIL + 1));;
 esac
 
+# Test: candidates --json is read-only (no yaml mutation, prints JSON).
+echo ""
+echo "Test: candidates --json is read-only"
+V_JSON=$(make_vault vault-json)
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$V_JSON/wiki/concepts/"
+(cd "$V_JSON" && git add . && git commit -qm "fixture content")
+OUT=$( (cd "$V_JSON" && node "$SCRIPT" candidates --scope=wiki/ --json) )
+COUNT=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).candidates.length))})")
+assert_eq "candidates --json reports 1 candidate" "1" "$COUNT"
+HAS_FILE="no"
+[ -f "$V_JSON/wiki/.state/contradictions.yaml" ] && HAS_FILE="yes"
+assert_eq "yaml not created in --json mode" "no" "$HAS_FILE"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

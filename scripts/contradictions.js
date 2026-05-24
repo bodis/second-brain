@@ -410,6 +410,10 @@ function cmdCandidates(vault, args) {
     ...signalConflictingRelations(vault, pages),
     ...signalSharedEntityProse(vault, pages),
   ];
+  if (args.json) {
+    process.stdout.write(JSON.stringify({ candidates: fresh }, null, 2) + '\n');
+    return;
+  }
   const doc = readState(vault) || emptyState();
   const existing = new Set(doc.contradictions.map(e =>
     candidateKey({ pages: e.pages, signal: e.signal, signal_data: e.signal_data })
