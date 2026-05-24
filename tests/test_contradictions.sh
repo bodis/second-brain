@@ -216,6 +216,25 @@ esac
 SHARED=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{process.stdout.write(String(JSON.parse(d).contradictions[0].signal_data.shared_links))})")
 assert_eq "shared_links === 5" "5" "$SHARED"
 
+# Test: re-run candidates on the same fixture → no duplicate entries.
+echo ""
+echo "Test: candidates dedupe on re-scan"
+V_DEDUP=$(make_vault vault-dedupe)
+cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$V_DEDUP/wiki/concepts/"
+(cd "$V_DEDUP" && git add . && git commit -qm "fixture content")
+(cd "$V_DEDUP" && node "$SCRIPT" candidates --scope=wiki/ >/dev/null)
+COUNT1=$(node -e "process.stdout.write(String(require('js-yaml').load(require('fs').readFileSync('$V_DEDUP/wiki/.state/contradictions.yaml','utf8')).contradictions.length))")
+(cd "$V_DEDUP" && node "$SCRIPT" candidates --scope=wiki/ >/dev/null)
+COUNT2=$(node -e "process.stdout.write(String(require('js-yaml').load(require('fs').readFileSync('$V_DEDUP/wiki/.state/contradictions.yaml','utf8')).contradictions.length))")
+assert_eq "second scan does not duplicate"  "$COUNT1" "$COUNT2"
+
+# Test: pair canonicalisation — `pages` is always lexically sorted.
+echo ""
+echo "Test: pages field is lexically sorted"
+PAGES=$(node -e "process.stdout.write(JSON.stringify(require('js-yaml').load(require('fs').readFileSync('$V_DEDUP/wiki/.state/contradictions.yaml','utf8')).contradictions[0].pages))")
+SORTED=$(node -e "let p=$PAGES; process.stdout.write(JSON.stringify([...p].sort()))")
+assert_eq "pages array is sorted" "$SORTED" "$PAGES"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

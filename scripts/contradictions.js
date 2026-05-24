@@ -338,23 +338,35 @@ function signalConflictingRelations(vault, pagesInScope) {
   return candidates;
 }
 
+// Canonical dedupe key for a candidate: (pages-sorted, signal, signal_data-sorted-json).
+function candidateKey(c) {
+  // signal_data lists were already sorted at emission time, but be defensive.
+  const sd = JSON.parse(JSON.stringify(c.signal_data));
+  for (const k of Object.keys(sd)) {
+    if (Array.isArray(sd[k])) sd[k] = [...sd[k]].sort();
+  }
+  return JSON.stringify([c.pages, c.signal, sd]);
+}
+
 function cmdCandidates(vault, args) {
   const scope = args.scope || 'wiki/';
-  // For now (Task 3): only support directory scope; page-list + neighbour
-  // expansion lands in Task 6.
   if (scope.includes(',') || scope.endsWith('.md')) {
     die('candidates: page-list scope not implemented yet (Task 6)', 2);
   }
   const pages = [...walkWikiMarkdown(vault)];
-  const candidates = [
+  const fresh = [
     ...signalConflictingRelations(vault, pages),
     ...signalSharedEntityProse(vault, pages),
   ];
-  // Enqueue: add each candidate as a new entry with status: unjudged.
-  // (Dedup against existing entries is Task 5.)
   const doc = readState(vault) || emptyState();
-  let added = 0;
-  for (const c of candidates) {
+  const existing = new Set(doc.contradictions.map(e =>
+    candidateKey({ pages: e.pages, signal: e.signal, signal_data: e.signal_data })
+  ));
+  let added = 0, skipped = 0;
+  for (const c of fresh) {
+    const key = candidateKey(c);
+    if (existing.has(key)) { skipped += 1; continue; }
+    existing.add(key);
     const id = allocateId(doc);
     doc.contradictions.push({
       id,
@@ -367,7 +379,7 @@ function cmdCandidates(vault, args) {
     added += 1;
   }
   if (added > 0) writeState(vault, doc);
-  process.stdout.write(`enqueued ${added} new\n`);
+  process.stdout.write(`enqueued ${added} new, skipped ${skipped} already-known\n`);
 }
 
 function main() {
