@@ -243,7 +243,7 @@ V_SCOPE=$(make_vault vault-scope)
 cp -a "$REPO_ROOT/tests/fixtures/contradictions/signal-1-conflicting-relations/wiki/concepts/." "$V_SCOPE/wiki/concepts/"
 (cd "$V_SCOPE" && git add . && git commit -qm "fixture content")
 # Scope only one of the two pages; the other should be picked up via the
-# shared `refines: ethics` neighbour link.
+# direct `[[ai-alignment]]` body wikilink in alignment.md.
 (cd "$V_SCOPE" && node "$SCRIPT" candidates --scope=wiki/concepts/alignment.md >/dev/null)
 COUNT=$(node -e "process.stdout.write(String(require('js-yaml').load(require('fs').readFileSync('$V_SCOPE/wiki/.state/contradictions.yaml','utf8')).contradictions.length))")
 assert_eq "scoped-with-expansion enqueues 1 candidate" "1" "$COUNT"
