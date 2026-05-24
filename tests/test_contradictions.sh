@@ -605,6 +605,21 @@ assert_eq "exit 2 on post-check structural failure" "2" "$EXIT"
 STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_AR/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
 assert_eq "status unchanged after revert" "unresolved" "$STATUS"
 
+# Test: schema_version mismatch → exit 2 with helpful message.
+echo ""
+echo "Test: schema_version mismatch"
+V_SV=$(make_vault vault-schema)
+cp "$REPO_ROOT/tests/fixtures/contradictions/schema-mismatch/wiki/.state/contradictions.yaml" "$V_SV/wiki/.state/contradictions.yaml"
+set +e
+ERR=$( (cd "$V_SV" && node "$SCRIPT" list 2>&1) )
+EXIT=$?
+set -e
+assert_eq "exit 2 on schema_version mismatch" "2" "$EXIT"
+case "$ERR" in
+  *"schema_version"*) echo "  PASS: stderr names schema_version"; PASS=$((PASS+1));;
+  *) echo "  FAIL: stderr did not mention schema_version: $ERR"; FAIL=$((FAIL+1));;
+esac
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
