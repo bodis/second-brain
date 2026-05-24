@@ -490,6 +490,157 @@ function cmdJudge(vault, args) {
   process.stdout.write(`${args.id}: ${entry.status}\n`);
 }
 
+// Split a page's body (everything after the frontmatter fence) into
+// paragraphs by double-newline. Returns { head, paragraphs, sep } where
+// head is the frontmatter fence + leading blank line, paragraphs is the
+// array of body paragraphs (no trailing newlines), and sep is the
+// paragraph separator (always `\n\n`).
+function splitPageBody(text) {
+  const m = text.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n\r?\n?)([\s\S]*)$/);
+  if (!m) return { head: '', paragraphs: text.split(/\r?\n\r?\n/), sep: '\n\n' };
+  return {
+    head: m[1],
+    paragraphs: m[2].split(/\r?\n\r?\n/),
+    sep: '\n\n',
+  };
+}
+
+// Find the paragraph index in `paragraphs` that contains `needle` as a
+// substring. Returns the (singular) index, or { error: 'zero' | 'multi', count }.
+function locateAssertionParagraph(paragraphs, needle) {
+  const matches = [];
+  for (let i = 0; i < paragraphs.length; i++) {
+    if (paragraphs[i].includes(needle)) matches.push(i);
+  }
+  if (matches.length === 0) return { error: 'zero', count: 0 };
+  if (matches.length > 1)  return { error: 'multi', count: matches.length };
+  return { index: matches[0] };
+}
+
+// Re-serialise frontmatter + body. Mutates the parsed frontmatter via `mutate`,
+// then writes the new file content. Preserves the exact head shape (---\n...---\n)
+// and uses CORE_SCHEMA dumping to keep quoting predictable.
+function updateFrontmatter(absPath, mutate) {
+  const text = fs.readFileSync(absPath, 'utf8');
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!m) throw new Error(`no frontmatter in ${absPath}`);
+  const fm = yaml.load(m[1], { schema: yaml.CORE_SCHEMA }) || {};
+  mutate(fm);
+  const dumped = yaml.dump(fm, { indent: 2, sortKeys: false, lineWidth: -1 }).trimEnd();
+  fs.writeFileSync(absPath, `---\n${dumped}\n---\n${m[2]}`);
+}
+
+// Run a child process synchronously in `vault`. Returns { status, stdout, stderr }.
+function run(vault, cmd, args) {
+  const r = spawnSync(cmd, args, { cwd: vault, encoding: 'utf8' });
+  if (r.error) die(`${cmd} failed to spawn: ${r.error.message}`, 2);
+  return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
+}
+
+function gitHeadSha(vault) {
+  const r = run(vault, 'git', ['rev-parse', 'HEAD']);
+  if (r.status !== 0) die(`git rev-parse HEAD failed: ${r.stderr}`, 2);
+  return r.stdout.trim();
+}
+
+function validateWikiAll(vault) {
+  const validate = path.join(__dirname, 'validate-wiki.js');
+  return run(vault, 'node', [validate, 'all']);
+}
+
+function revertHead(vault) {
+  const r = run(vault, 'git', ['revert', '--no-edit', 'HEAD']);
+  if (r.status !== 0) die(`git revert failed: ${r.stderr}`, 2);
+}
+
+function cmdApplyPick(vault, args) {
+  if (!args.id) die('apply-pick: --id is required', 2);
+  if (!args['winning-page']) die('apply-pick: --winning-page is required', 2);
+  if (!args.rewrite) die('apply-pick: --rewrite is required', 2);
+  const winning = args['winning-page'];
+  const rewritePath = args.rewrite;
+  if (!fs.existsSync(rewritePath)) die(`apply-pick: --rewrite tmpfile not found: ${rewritePath}`, 2);
+
+  const doc = readState(vault);
+  if (!doc) die(`apply-pick: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`apply-pick: id ${args.id} not found`, 3);
+  if (entry.status !== 'unresolved' && entry.status !== 'deferred') {
+    die(`apply-pick: entry ${args.id} status is ${entry.status}, expected unresolved or deferred`, 3);
+  }
+  if (!entry.pages.includes(winning)) {
+    die(`apply-pick: --winning-page ${winning} is not in entry pages ${JSON.stringify(entry.pages)}`, 3);
+  }
+  const losing = entry.pages.find(p => p !== winning);
+  // Index of winning in entry.pages decides pick-a vs pick-b.
+  const winningIdx = entry.pages.indexOf(winning);
+  const verdictKind = winningIdx === 0 ? 'resolved-pick-a' : 'resolved-pick-b';
+
+  const losingAbs = path.join(vault, losing);
+  if (!fs.existsSync(losingAbs)) die(`apply-pick: losing page not found on disk: ${losing}`, 3);
+
+  // Locate the assertion paragraph in the losing page.
+  const losingAssertion = (entry.judgment?.assertions || []).find(a => a.page === losing);
+  if (!losingAssertion) die(`apply-pick: judgment.assertions has no entry for losing page ${losing}`, 3);
+  const losingText = fs.readFileSync(losingAbs, 'utf8');
+  const split = splitPageBody(losingText);
+  const located = locateAssertionParagraph(split.paragraphs, losingAssertion.text);
+  if (located.error === 'zero')  die(`apply-pick: assertion substring matched 0 paragraphs in ${losing}`, 3);
+  if (located.error === 'multi') die(`apply-pick: assertion substring matched ${located.count} paragraphs in ${losing}`, 3);
+
+  // Swap the matched paragraph with the rewrite content (trim trailing newlines).
+  const newPara = fs.readFileSync(rewritePath, 'utf8').replace(/\r?\n+$/, '');
+  split.paragraphs[located.index] = newPara;
+  const newBody = split.paragraphs.join(split.sep);
+  fs.writeFileSync(losingAbs, split.head + newBody);
+
+  // Sources dedup: append winning's sources to losing's, dedupe, bump updated.
+  const winningAbs = path.join(vault, winning);
+  const winningFm = readFrontmatter(winningAbs) || {};
+  const winningSources = Array.isArray(winningFm.sources) ? winningFm.sources : [];
+  const appended = [];
+  updateFrontmatter(losingAbs, (fm) => {
+    fm.sources = Array.isArray(fm.sources) ? [...fm.sources] : [];
+    for (const s of winningSources) {
+      if (!fm.sources.includes(s)) {
+        fm.sources.push(s);
+        appended.push(s);
+      }
+    }
+    fm.updated = todayDate();
+  });
+
+  // Commit.
+  const claim = entry.judgment?.claim || '(unknown)';
+  const commitMsg = `reconcile: pick ${winning} over ${losing} on ${claim}`;
+  const add = run(vault, 'git', ['add', losing]);
+  if (add.status !== 0) die(`git add failed: ${add.stderr}`, 2);
+  const commit = run(vault, 'git', ['commit', '-m', commitMsg]);
+  if (commit.status !== 0) die(`git commit failed: ${commit.stderr}`, 2);
+
+  // Post-check.
+  const check = validateWikiAll(vault);
+  if (check.status === 2) {
+    revertHead(vault);
+    process.stderr.write(`apply-pick: validate-wiki structural failure — reverted\n${check.stderr}`);
+    process.exit(2);
+  }
+  const sha = gitHeadSha(vault);
+
+  // Yaml update: transition + resolution block.
+  entry.status = verdictKind;
+  entry.resolution = {
+    at: nowIso(),
+    picked_page: winning,
+    edited_page: losing,
+    commit: sha,
+    sources_appended_to_edited: appended,
+  };
+  writeState(vault, doc);
+
+  process.stdout.write(`${sha}\n`);
+}
+
 function cmdResolve(vault, args) {
   if (!args.id) die('resolve: --id is required', 2);
   if (!args.kind) die('resolve: --kind is required', 2);
@@ -521,7 +672,7 @@ function main() {
     case 'list':         return cmdList(vault, args);
     case 'judge':        return cmdJudge(vault, args);
     case 'resolve':      return cmdResolve(vault, args);
-    case 'apply-pick':   die('apply-pick: not implemented yet', 2);
+    case 'apply-pick':   return cmdApplyPick(vault, args);
     case 'apply-accept': die('apply-accept: not implemented yet', 2);
     default:             die(`unknown subcommand: ${cmd}`, 2);
   }

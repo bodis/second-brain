@@ -392,6 +392,138 @@ EXIT=$?
 set -e
 assert_eq "exit 2 on unsupported kind" "2" "$EXIT"
 
+# Helper: seed a vault for apply-pick — fixture + one unresolved entry with
+# a populated judgment block that quotes one paragraph from each page.
+# Echoes the entry id.
+seed_apply_pick() {
+  local v="$1"
+  cp -a "$REPO_ROOT/tests/fixtures/contradictions/apply-pick-input/wiki/." "$v/wiki/"
+  (cd "$v" && git add . && git commit -qm "fixture content")
+  # Hand-craft contradictions.yaml so we control the assertion text exactly.
+  cat > "$v/wiki/.state/contradictions.yaml" <<YAML
+schema_version: 1
+generated_by: scripts/contradictions.js
+contradictions:
+  - id: 2026-05-24-001
+    detected_at: 2026-05-24T10:00:00Z
+    pages: [wiki/concepts/acquisitions.md, wiki/entities/foo.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [foo], a_only_targets: [], b_only_targets: [bar] }
+    status: unresolved
+    judgment:
+      verdict: real-contradiction
+      at: 2026-05-24T11:00:00Z
+      claim: "Acquirer of Foo"
+      assertions:
+        - page: wiki/entities/foo.md
+          text: "Foo was acquired by Bar in 2023."
+          source: raw/article-a.md
+        - page: wiki/concepts/acquisitions.md
+          text: "Foo was acquired by Baz in 2024."
+          source: raw/article-b.md
+      rationale: "Two pages, different acquirers."
+YAML
+  (cd "$v" && git add wiki/.state/contradictions.yaml && git commit -qm "seed contradiction")
+  echo "2026-05-24-001"
+}
+
+# Test: apply-pick happy path — pick foo, rewrite acquisitions, single commit,
+# yaml entry transitions to resolved-pick-b (acquisitions is b in lexical sort).
+echo ""
+echo "Test: apply-pick happy path"
+V_AP=$(make_vault vault-apply-pick)
+ID=$(seed_apply_pick "$V_AP")
+TMP=$(mktemp)
+cat > "$TMP" <<'MD'
+Foo was acquired by Bar in 2023.
+MD
+(cd "$V_AP" && node "$SCRIPT" apply-pick --id="$ID" --winning-page=wiki/entities/foo.md --rewrite="$TMP" >/dev/null)
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_AP/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status === resolved-pick-b" "resolved-pick-b" "$STATUS"
+LOSING_TEXT=$(grep -c "Baz in 2024" "$V_AP/wiki/concepts/acquisitions.md" || true)
+assert_eq "Baz claim removed from acquisitions.md" "0" "$LOSING_TEXT"
+BAR_REPLACED=$(grep -c "Foo was acquired by Bar in 2023" "$V_AP/wiki/concepts/acquisitions.md" || true)
+assert_eq "Bar claim swapped into acquisitions.md" "1" "$BAR_REPLACED"
+HAS_A=$(grep -c "article-a.md" "$V_AP/wiki/concepts/acquisitions.md" || true)
+HAS_B=$(grep -c "article-b.md" "$V_AP/wiki/concepts/acquisitions.md" || true)
+assert_eq "acquisitions.md sources include article-a.md" "1" "$HAS_A"
+assert_eq "acquisitions.md sources include article-b.md" "1" "$HAS_B"
+COMMIT_COUNT=$(cd "$V_AP" && git log --grep "reconcile: pick" --oneline | wc -l | tr -d ' ')
+assert_eq "exactly one reconcile commit" "1" "$COMMIT_COUNT"
+rm -f "$TMP"
+
+# Test: apply-pick substring not found → exit 3, no mutation.
+echo ""
+echo "Test: apply-pick substring not found → exit 3"
+V_NF=$(make_vault vault-apply-notfound)
+ID=$(seed_apply_pick "$V_NF")
+node -e "
+const fs=require('fs'), yaml=require('js-yaml');
+const p='$V_NF/wiki/.state/contradictions.yaml';
+const d=yaml.load(fs.readFileSync(p,'utf8'),{schema:yaml.CORE_SCHEMA});
+d.contradictions[0].judgment.assertions[1].text='No such sentence ever appears';
+fs.writeFileSync(p,yaml.dump(d,{indent:2,sortKeys:false,lineWidth:-1}));
+"
+TMP=$(mktemp); echo "anything" > "$TMP"
+set +e
+(cd "$V_NF" && node "$SCRIPT" apply-pick --id="$ID" --winning-page=wiki/entities/foo.md --rewrite="$TMP" >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 3 on zero-match substring" "3" "$EXIT"
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_NF/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status unchanged after zero-match" "unresolved" "$STATUS"
+rm -f "$TMP"
+
+# Test: apply-pick substring matches multiple paragraphs → exit 3.
+echo ""
+echo "Test: apply-pick substring matches multiple paragraphs → exit 3"
+V_MM=$(make_vault vault-apply-multi)
+ID=$(seed_apply_pick "$V_MM")
+cat >> "$V_MM/wiki/concepts/acquisitions.md" <<'MD'
+
+Foo was acquired by Baz in 2024.
+MD
+(cd "$V_MM" && git add wiki/concepts/acquisitions.md && git commit -qm "duplicate paragraph")
+TMP=$(mktemp); echo "anything" > "$TMP"
+set +e
+(cd "$V_MM" && node "$SCRIPT" apply-pick --id="$ID" --winning-page=wiki/entities/foo.md --rewrite="$TMP" >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 3 on multiple-match substring" "3" "$EXIT"
+rm -f "$TMP"
+
+# Test: apply-pick post-check revert — pre-stage a dead index row that makes
+# validate-wiki exit 2 on every run.  apply-pick's commit triggers the
+# post-check, which fails, and the script auto-reverts.
+#
+# (Broken wikilinks in the rewrite would only trigger validate-wiki exit 1,
+# which is a warning per CR-005 conventions — not a revert trigger. Lint will
+# surface those later. We test the structural-failure revert path explicitly.)
+echo ""
+echo "Test: apply-pick post-check auto-revert"
+V_RV=$(make_vault vault-apply-revert)
+ID=$(seed_apply_pick "$V_RV")
+echo "- [[wiki/concepts/nonexistent]]" >> "$V_RV/wiki/index.md"
+(cd "$V_RV" && git add wiki/index.md && git commit -qm "stage dead index row")
+TMP=$(mktemp)
+cat > "$TMP" <<'MD'
+Foo was acquired by Bar in 2023.
+MD
+set +e
+(cd "$V_RV" && node "$SCRIPT" apply-pick --id="$ID" --winning-page=wiki/entities/foo.md --rewrite="$TMP" >/dev/null 2>&1)
+EXIT=$?
+set -e
+assert_eq "exit 2 on post-check structural failure" "2" "$EXIT"
+STATUS=$(node -e "process.stdout.write(require('js-yaml').load(require('fs').readFileSync('$V_RV/wiki/.state/contradictions.yaml','utf8')).contradictions[0].status)")
+assert_eq "status unchanged after revert" "unresolved" "$STATUS"
+HEAD_MSG=$(cd "$V_RV" && git log -1 --format=%s)
+case "$HEAD_MSG" in
+  *"Revert"*"reconcile: pick"*) echo "  PASS: revert commit present"; PASS=$((PASS+1));;
+  *"reconcile: pick"*)          echo "  FAIL: reconcile commit not reverted"; FAIL=$((FAIL+1));;
+  *)                            echo "  FAIL: unexpected HEAD: $HEAD_MSG"; FAIL=$((FAIL+1));;
+esac
+rm -f "$TMP"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"
