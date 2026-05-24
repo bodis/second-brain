@@ -41,13 +41,16 @@ Derived from `validate-wiki.js all --json` regardless of its exit code.
 
 ### `contradictions`
 Read directly from `wiki/.state/contradictions.yaml` (owned by CR-007).
-- **`present`** (boolean): `true` if the state file exists; `false` until
-  CR-007 lands.
-- **`unjudged_candidates`** (integer): always `0` in CR-009. CR-007 may compute
-  candidates on-demand rather than persist them; either way the key stays for
-  cron-consumer forward compatibility.
-- **`unresolved`** (integer): count of entries with `status: unresolved`. CR-007
-  owns the per-entry semantics; CR-009 only counts.
+- **`present`** (boolean): `true` once the state file exists. The file is
+  created lazily by the first `contradictions.js candidates` enqueue.
+- **`unjudged_candidates`** (integer): count of entries with
+  `status: unjudged` — candidates detected by the script but not yet seen by
+  the LLM judge. Cron triggers `/second-brain:status reconcile --judge-only`
+  when this is > 0.
+- **`unresolved`** (integer): count of entries with `status: unresolved` OR
+  `status: deferred` — both surface in the interactive `/status reconcile`
+  walk. `not-a-contradiction` and `resolved-*` entries count toward neither
+  (they are not actionable).
 
 ### `staleness`
 Read directly from `wiki/.state/staleness.yaml` (owned by CR-008).
