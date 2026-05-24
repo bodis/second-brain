@@ -181,11 +181,6 @@ function* walkWikiMarkdown(vault) {
   }
 }
 
-// Return the lexically-sorted pair [a, b] (a < b).
-function pairKey(a, b) {
-  return a < b ? [a, b] : [b, a];
-}
-
 // Allocate the next ID for today's date. Reads existing entries, finds the
 // highest NNN for today, returns max+1 zero-padded to 3 digits.
 function allocateId(doc) {

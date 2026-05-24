@@ -428,7 +428,8 @@ YAML
 }
 
 # Test: apply-pick happy path — pick foo, rewrite acquisitions, single commit,
-# yaml entry transitions to resolved-pick-b (acquisitions is b in lexical sort).
+# yaml entry transitions to resolved-pick-b. Lexically sorted pages are
+# [acquisitions (a), foo (b)]; winning is foo (b) → resolved-pick-b.
 echo ""
 echo "Test: apply-pick happy path"
 V_AP=$(make_vault vault-apply-pick)
