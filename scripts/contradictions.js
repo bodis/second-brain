@@ -111,7 +111,10 @@ function cmdList(vault, args) {
     return;
   }
   if (entries.length === 0) {
-    process.stdout.write('No contradictions matching filter.\n');
+    const msg = args.status
+      ? 'No contradictions matching filter.\n'
+      : 'No contradictions.\n';
+    process.stdout.write(msg);
     return;
   }
   // Group by status for the human summary.
@@ -128,7 +131,8 @@ function cmdList(vault, args) {
     lines.push(`${status} (${list.length}):`);
     for (const e of list) {
       const claim = e.judgment?.claim || '(unjudged)';
-      lines.push(`  ${e.id}  ${e.pages.join(' ⟷ ')}  — ${claim}`);
+      const pages = Array.isArray(e.pages) ? e.pages.join(' ⟷ ') : '(unknown pages)';
+      lines.push(`  ${e.id}  ${pages}  — ${claim}`);
     }
     lines.push('');
   }
