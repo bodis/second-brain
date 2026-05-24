@@ -50,7 +50,9 @@ function findVaultRoot(start) {
 }
 
 // Parse `--flag=value`, `--flag value`, and `--flag` (boolean). Returns
-// { _: positional[], <flag>: <value> }. Unknown args cause exit 2.
+// { _: positional[], <flag>: <value> }. Open-world: unknown flags are
+// accumulated into the result so each subcommand can validate its own
+// arg set after parsing.
 function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {

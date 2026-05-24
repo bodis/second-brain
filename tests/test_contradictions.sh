@@ -96,6 +96,13 @@ OUT=$( (cd "$V0" && node "$SCRIPT" nonsense 2>&1) )
 EXIT=$?
 set -e
 assert_eq "exit 2 on unknown subcommand" "2" "$EXIT"
+case "$OUT" in
+  *"unknown subcommand: nonsense"*)
+    echo "  PASS: stderr names the subcommand"; PASS=$((PASS + 1));;
+  *)
+    echo "  FAIL: stderr did not say 'unknown subcommand: nonsense' — got: $OUT"
+    FAIL=$((FAIL + 1));;
+esac
 
 echo ""
 echo "=== Results ==="
