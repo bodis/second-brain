@@ -44,9 +44,10 @@ These are starting points; tune to vault size and ingest volume.
 }
 ```
 
-The `reconcile --judge-only` and `refresh --judge-only` calls are no-ops until
-CR-007 and CR-008 land — but the cron shape can be set up now and will start
-doing work as soon as those CRs ship.
+The `reconcile --judge-only` call is live; CR-007's judge pass runs against
+any `status: unjudged` entries in `wiki/.state/contradictions.yaml` and
+writes verdicts back. The `refresh --judge-only` call is still a no-op
+until CR-008 lands.
 
 ## The `.claude/headless.log` convention
 
