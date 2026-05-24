@@ -51,10 +51,18 @@ exempt:
   - wiki/index.md
   - wiki/log.md
 required:
-  tags: { type: list[string], may_be_empty: true }
-  sources: { type: list[string], may_be_empty: false }
-  created: { type: date, format: YYYY-MM-DD }
-  updated: { type: date, format: YYYY-MM-DD }
+  tags:
+    type: list[string]
+    may_be_empty: true
+  sources:
+    type: list[string]
+    may_be_empty: false
+  created:
+    type: date
+    format: YYYY-MM-DD
+  updated:
+    type: date
+    format: YYYY-MM-DD
 unknown_keys: allowed
 YAML
   cat > "$v/wiki/index.md" <<'MD'
