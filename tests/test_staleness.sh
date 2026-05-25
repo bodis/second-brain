@@ -577,6 +577,38 @@ rc=$?
 set -e
 assert_eq "wikilinks validator exit" "0" "$rc"
 
+echo "==> apply-historical: explicit --since"
+V=$(make_vault apply-historical-explicit)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-historical-input/wiki/." "$V/wiki/"
+cd "$V"
+node "$SCRIPT" apply-historical --id=2026-05-25-001 --since=2024-05 >/dev/null
+fm=$(head -n 12 wiki/concepts/snapshot.md)
+case "$fm" in
+  *"state: historical"*"since: 2024-05"*) assert_eq "lifecycle frontmatter present" "ok" "ok" ;;
+  *) assert_eq "lifecycle frontmatter present" "expected state: historical + since: 2024-05" "$fm" ;;
+esac
+body=$(tail -n 5 wiki/concepts/snapshot.md)
+case "$body" in
+  *"frozen moment"*) assert_eq "body preserved" "ok" "ok" ;;
+  *) assert_eq "body preserved" "expected 'frozen moment'" "$body" ;;
+esac
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)")
+res=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].resolution)")
+assert_eq "apply-historical status" "resolved" "$status"
+assert_eq "apply-historical resolution" "historical" "$res"
+
+echo "==> apply-historical: default --since is current YYYY-MM"
+V=$(make_vault apply-historical-default)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-historical-input/wiki/." "$V/wiki/"
+cd "$V"
+node "$SCRIPT" apply-historical --id=2026-05-25-001 >/dev/null
+fm=$(head -n 12 wiki/concepts/snapshot.md)
+expected_since=$(date -u +%Y-%m)
+case "$fm" in
+  *"since: $expected_since"*) assert_eq "default since" "ok" "ok" ;;
+  *) assert_eq "default since" "expected since: $expected_since" "$fm" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

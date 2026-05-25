@@ -611,7 +611,52 @@ function cmdApplyArchive(vault, args) {
   writeState(vault, doc);
   process.stdout.write(`${args.id}: archived -> ${archiveRel}\n`);
 }
-function cmdApplyHistorical(){die('apply-historical: not implemented yet', 2); }
+function todayMonthStr() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function cmdApplyHistorical(vault, args) {
+  if (!args.id) die('apply-historical: --id is required', 2);
+  const since = (typeof args.since === 'string') ? args.since : todayMonthStr();
+  if (!/^\d{4}-\d{2}$/.test(since)) die(`apply-historical: --since must be YYYY-MM, got ${since}`, 2);
+
+  const doc = readState(vault);
+  if (!doc) die(`apply-historical: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`apply-historical: id ${args.id} not found`, 3);
+  if (entry.status !== 'unreviewed') {
+    die(`apply-historical: entry ${args.id} status is ${entry.status}, expected unreviewed`, 3);
+  }
+  const abs = path.join(vault, entry.path);
+  if (!fs.existsSync(abs)) die(`apply-historical: page ${entry.path} does not exist`, 3);
+
+  const original = fs.readFileSync(abs, 'utf8');
+  const { fm, body } = splitFrontmatter(original);
+  if (!fm) die(`apply-historical: page ${entry.path} has no frontmatter`, 3);
+  const fmObj = parseFrontmatter(fm);
+  fmObj.lifecycle = { state: 'historical', since };
+  fmObj.updated = todayDateStr();
+  const updated = joinFrontmatter(dumpFrontmatter(fmObj), body);
+
+  const tmp = `${abs}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, updated);
+  fs.renameSync(tmp, abs);
+
+  const v = runValidateWiki(vault);
+  if (v.code !== 0) {
+    fs.writeFileSync(abs, original);
+    process.stderr.write(v.stderr || v.stdout || '');
+    die(`apply-historical: validate-wiki failed (exit ${v.code}); reverted`, 2);
+  }
+
+  const score = (entry.factors && Number(entry.factors.age_percentile) * Number(entry.factors.moved_past_percentile)) || 0;
+  entry.status = 'resolved';
+  entry.resolution = 'historical';
+  entry.resolved_at = nowIso();
+  entry.last_reviewed_signal_score = Number(score.toFixed(3));
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: historical (since ${since})\n`);
+}
 function cmdCheck()      { die('check: not implemented yet', 2); }
 
 function main() {
