@@ -63,9 +63,28 @@ is asynchronous.
 
 ### 3. Stale claims
 
-Cross-reference source dates with wiki content. Flag when:
-- A concept page cites only old sources and newer sources exist on the same topic
-- Entity information hasn't been updated despite newer sources mentioning that entity
+Staleness-finding flows through `scripts/staleness.js`. Lint performs the full-vault candidate scan (enqueueing newly-flagged pages into `wiki/.state/staleness.yaml` as `status: unjudged`) and reports the lifecycle counts back to the user.
+
+```bash
+# Full-vault scan: enqueue any newly-detected high/medium-signal pages.
+node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" candidates --scope=wiki/
+```
+
+```bash
+# Report counts across the lifecycle.
+node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" list \
+  --status=unjudged,unreviewed,deferred --json
+```
+
+Tally counts by `status` (and by `signal` for the `unreviewed` slice) and surface them under "Warnings":
+
+```
+Staleness: N unjudged, M unreviewed (P high, Q medium), K deferred.
+Run /second-brain:status refresh (interactive) or schedule
+--judge-only via cron.
+```
+
+Do **not** read pages for staleness in this step — the script narrows candidates deterministically and the LLM judge pass (`/second-brain:status refresh --judge-only`) does the prose-level filtering. Lint is the trigger for the full-vault scan; the judge pass is asynchronous.
 
 ### 4. Missing pages
 
