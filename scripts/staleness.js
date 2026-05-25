@@ -427,7 +427,39 @@ function cmdList(vault, args) {
     process.stdout.write(`${e.id}\t${e.path}\t${e.status}\t${e.signal}\n`);
   }
 }
-function cmdJudge()      { die('judge: not implemented yet', 2); }
+const VALID_VERDICTS = new Set(['stale', 'drifting', 'fresh-but-isolated', 'false-positive']);
+
+function cmdJudge(vault, args) {
+  if (!args.id) die('judge: --id is required', 2);
+  if (!args.verdict) die('judge: --verdict is required', 2);
+  if (!VALID_VERDICTS.has(args.verdict)) die(`judge: unknown verdict ${args.verdict}`, 2);
+  if (!args.data) die('judge: --data is required', 2);
+  let data;
+  try { data = JSON.parse(args.data); } catch { die('judge: --data is not valid JSON', 2); }
+  if (typeof data.reason !== 'string') die('judge: --data.reason must be a string', 2);
+  if (!Array.isArray(data.neighbors_examined)) die('judge: --data.neighbors_examined must be an array', 2);
+
+  const doc = readState(vault);
+  if (!doc) die(`judge: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`judge: id ${args.id} not found`, 3);
+  if (entry.status !== 'unjudged') {
+    die(`judge: entry ${args.id} status is ${entry.status}, expected unjudged`, 3);
+  }
+
+  const newStatus = (args.verdict === 'stale' || args.verdict === 'drifting') ? 'unreviewed' : 'dismissed';
+  const score = (entry.factors && Number(entry.factors.age_percentile) * Number(entry.factors.moved_past_percentile)) || 0;
+  entry.status = newStatus;
+  entry.judgment = {
+    verdict: args.verdict,
+    reason: data.reason,
+    neighbors_examined: data.neighbors_examined,
+    judged_at: nowIso(),
+  };
+  entry.last_reviewed_signal_score = Number(score.toFixed(3));
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: ${args.verdict} -> ${newStatus}\n`);
+}
 function cmdResolve()    { die('resolve: not implemented yet', 2); }
 function cmdApplyRefresh(){die('apply-refresh: not implemented yet', 2); }
 function cmdApplyArchive(){die('apply-archive: not implemented yet', 2); }

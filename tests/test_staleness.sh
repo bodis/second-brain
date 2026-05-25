@@ -346,6 +346,78 @@ padding_present=$(echo "$json" | grep -c '"path": "wiki/concepts/padding-1.md"' 
 assert_eq "scoped page present" "1" "$stale_present"
 assert_eq "out-of-scope padding absent" "0" "$padding_present"
 
+echo "==> judge: each verdict routes to the correct status"
+for verdict in stale:unreviewed drifting:unreviewed fresh-but-isolated:dismissed false-positive:dismissed; do
+  v=${verdict%%:*}; expected=${verdict##*:}
+  V=$(make_vault "judge-$v")
+  cat > "$V/wiki/.state/staleness.yaml" <<YAML
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    factors: {age_months: 24, age_percentile: 0.9, newer_overlapping_sources: 10, moved_past_percentile: 0.9}
+    last_reviewed_signal_score: null
+    status: unjudged
+    judgment: null
+    resolution: null
+    resolved_at: null
+    deferred_at: null
+YAML
+  ( cd "$V"; node "$SCRIPT" judge --id=2026-05-25-001 --verdict="$v" --data='{"reason":"...","neighbors_examined":[]}' >/dev/null )
+  actual=$( cd "$V" && node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)" )
+  assert_eq "judge $v -> $expected" "$expected" "$actual"
+  verdict_stored=$( cd "$V" && node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write((d.pages[0].judgment||{}).verdict||'')" )
+  assert_eq "judge $v verdict persisted" "$v" "$verdict_stored"
+done
+
+echo "==> judge: re-judging an already-judged entry -> exit 3"
+V=$(make_vault judge-invalid)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    factors: {age_months: 24, age_percentile: 0.9, newer_overlapping_sources: 10, moved_past_percentile: 0.9}
+    last_reviewed_signal_score: 0.81
+    status: unreviewed
+    judgment: {verdict: stale, reason: ".", neighbors_examined: [], judged_at: "2026-05-24T00:00:00Z"}
+    resolution: null
+    resolved_at: null
+    deferred_at: null
+YAML
+cd "$V"
+set +e
+output=$(node "$SCRIPT" judge --id=2026-05-25-001 --verdict=drifting --data='{"reason":".","neighbors_examined":[]}' 2>&1)
+rc=$?
+set -e
+assert_eq "invalid-transition exit code" "3" "$rc"
+case "$output" in
+  *"status is unreviewed"*|*"expected unjudged"*) assert_eq "error mentions status" "ok" "ok" ;;
+  *) assert_eq "error mentions status" "expected 'status is unreviewed' or 'expected unjudged'" "$output" ;;
+esac
+
+echo "==> judge: missing id -> exit 3"
+V=$(make_vault judge-missing)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages: []
+YAML
+cd "$V"
+set +e
+output=$(node "$SCRIPT" judge --id=2026-05-25-999 --verdict=stale --data='{"reason":".","neighbors_examined":[]}' 2>&1)
+rc=$?
+set -e
+assert_eq "missing-id exit code" "3" "$rc"
+case "$output" in
+  *"not found"*) assert_eq "error mentions not found" "ok" "ok" ;;
+  *) assert_eq "error mentions not found" "expected 'not found'" "$output" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
