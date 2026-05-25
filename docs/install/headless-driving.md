@@ -46,8 +46,10 @@ These are starting points; tune to vault size and ingest volume.
 
 The `reconcile --judge-only` call is live; CR-007's judge pass runs against
 any `status: unjudged` entries in `wiki/.state/contradictions.yaml` and
-writes verdicts back. The `refresh --judge-only` call is still a no-op
-until CR-008 lands.
+writes verdicts back. The `refresh --judge-only` call is live; CR-008's judge pass runs against
+unjudged candidates and writes verdicts back. Combined with the
+`candidates` call wired into `/second-brain:lint`, the headless pipeline
+keeps the staleness inbox drained.
 
 ## The `.claude/headless.log` convention
 
