@@ -524,7 +524,93 @@ function cmdApplyRefresh(vault, args) {
   writeState(vault, doc);
   process.stdout.write(`${args.id}: refreshed\n`);
 }
-function cmdApplyArchive(){die('apply-archive: not implemented yet', 2); }
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
+
+function splitFrontmatter(text) {
+  const m = FRONTMATTER_RE.exec(text);
+  if (!m) return { fm: null, body: text };
+  return { fm: m[1], body: m[2] };
+}
+function joinFrontmatter(fm, body) {
+  return `---\n${fm}\n---\n${body}`;
+}
+function parseFrontmatter(fm) {
+  return yaml.load(fm, { schema: yaml.CORE_SCHEMA }) || {};
+}
+function dumpFrontmatter(obj) {
+  return yaml.dump(obj, { indent: 2, sortKeys: false, lineWidth: -1 }).trimEnd();
+}
+
+function yearFromMtime(absPath) {
+  const s = fs.statSync(absPath);
+  const d = new Date(s.mtimeMs);
+  return String(d.getFullYear());
+}
+
+function cmdApplyArchive(vault, args) {
+  if (!args.id) die('apply-archive: --id is required', 2);
+  const doc = readState(vault);
+  if (!doc) die(`apply-archive: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`apply-archive: id ${args.id} not found`, 3);
+  if (entry.status !== 'unreviewed') {
+    die(`apply-archive: entry ${args.id} status is ${entry.status}, expected unreviewed`, 3);
+  }
+  const origRel = entry.path;
+  const origAbs = path.join(vault, origRel);
+  if (!fs.existsSync(origAbs)) die(`apply-archive: page ${origRel} does not exist`, 3);
+
+  const year = yearFromMtime(origAbs);
+  const archiveRel = `wiki/archive/${year}/${origRel.replace(/^wiki\//, '')}`;
+  const archiveAbs = path.join(vault, archiveRel);
+  if (fs.existsSync(archiveAbs)) die(`apply-archive: archive target already exists: ${archiveRel}`, 3);
+
+  const originalText = fs.readFileSync(origAbs, 'utf8');
+  const { fm, body } = splitFrontmatter(originalText);
+  const fmObj = fm ? parseFrontmatter(fm) : {};
+  const carryTags = Array.isArray(fmObj.tags) ? fmObj.tags : [];
+  const carryCreated = fmObj.created || todayDateStr();
+  const carryUpdated = todayDateStr();
+
+  // 1. Write archive file (original content + lifecycle: archived).
+  fmObj.lifecycle = { state: 'archived', original: origRel };
+  const archiveText = joinFrontmatter(dumpFrontmatter(fmObj), body);
+  fs.mkdirSync(path.dirname(archiveAbs), { recursive: true });
+  const archiveTmp = `${archiveAbs}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(archiveTmp, archiveText);
+  fs.renameSync(archiveTmp, archiveAbs);
+
+  // 2. Replace original with stub (lifecycle: superseded + empty sources).
+  const stubFm = dumpFrontmatter({
+    tags: carryTags,
+    sources: [],
+    created: carryCreated,
+    updated: carryUpdated,
+    lifecycle: { state: 'superseded', by: archiveRel },
+  });
+  const stubBody = `See [[${archiveRel.replace(/\.md$/, '')}]] for the original content.\n`;
+  const stubText = joinFrontmatter(stubFm, stubBody);
+  const stubTmp = `${origAbs}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(stubTmp, stubText);
+  fs.renameSync(stubTmp, origAbs);
+
+  // 3. Validate.
+  const v = runValidateWiki(vault);
+  if (v.code !== 0) {
+    fs.writeFileSync(origAbs, originalText);
+    try { fs.unlinkSync(archiveAbs); } catch {}
+    process.stderr.write(v.stderr || v.stdout || '');
+    die(`apply-archive: validate-wiki failed (exit ${v.code}); reverted`, 2);
+  }
+
+  const score = (entry.factors && Number(entry.factors.age_percentile) * Number(entry.factors.moved_past_percentile)) || 0;
+  entry.status = 'resolved';
+  entry.resolution = 'archived';
+  entry.resolved_at = nowIso();
+  entry.last_reviewed_signal_score = Number(score.toFixed(3));
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: archived -> ${archiveRel}\n`);
+}
 function cmdApplyHistorical(){die('apply-historical: not implemented yet', 2); }
 function cmdCheck()      { die('check: not implemented yet', 2); }
 

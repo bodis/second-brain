@@ -534,6 +534,49 @@ status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').
 assert_eq "entry stays unreviewed" "unreviewed" "$status"
 rm -f "$TMP"
 
+echo "==> apply-archive: moves file, writes stub, both have lifecycle frontmatter"
+V=$(make_vault apply-archive-happy)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-archive-input/wiki/." "$V/wiki/"
+touch -t 202401010000 "$V/wiki/concepts/old.md"
+cd "$V"
+node "$SCRIPT" apply-archive --id=2026-05-25-001 >/dev/null
+if [ -f wiki/archive/2024/concepts/old.md ]; then
+  assert_eq "archive file exists" "ok" "ok"
+else
+  assert_eq "archive file exists" "yes" "missing"
+fi
+if [ -f wiki/concepts/old.md ]; then
+  assert_eq "stub file exists" "ok" "ok"
+else
+  assert_eq "stub file exists" "yes" "missing"
+fi
+archive_fm=$(head -n 12 wiki/archive/2024/concepts/old.md)
+case "$archive_fm" in
+  *"state: archived"*"original: wiki/concepts/old.md"*) assert_eq "archive lifecycle frontmatter" "ok" "ok" ;;
+  *) assert_eq "archive lifecycle frontmatter" "expected state: archived + original: wiki/concepts/old.md" "$archive_fm" ;;
+esac
+stub_fm=$(head -n 12 wiki/concepts/old.md)
+case "$stub_fm" in
+  *"state: superseded"*"by: wiki/archive/2024/concepts/old.md"*) assert_eq "stub lifecycle frontmatter" "ok" "ok" ;;
+  *) assert_eq "stub lifecycle frontmatter" "expected state: superseded + by: wiki/archive/2024/concepts/old.md" "$stub_fm" ;;
+esac
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)")
+res=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].resolution)")
+assert_eq "apply-archive status" "resolved" "$status"
+assert_eq "apply-archive resolution" "archived" "$res"
+
+echo "==> apply-archive: inbound wikilinks resolve through the stub"
+V=$(make_vault apply-archive-links)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-archive-input/wiki/." "$V/wiki/"
+touch -t 202401010000 "$V/wiki/concepts/old.md"
+cd "$V"
+node "$SCRIPT" apply-archive --id=2026-05-25-001 >/dev/null
+set +e
+node "$VALIDATE" wikilinks >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "wikilinks validator exit" "0" "$rc"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
