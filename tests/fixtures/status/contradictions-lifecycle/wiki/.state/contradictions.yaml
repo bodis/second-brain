@@ -1,0 +1,33 @@
+schema_version: 1
+generated_by: scripts/contradictions.js
+contradictions:
+  - id: 2026-05-24-001
+    pages: [wiki/concepts/a.md, wiki/concepts/b.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: unjudged
+  - id: 2026-05-24-002
+    pages: [wiki/concepts/c.md, wiki/concepts/d.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: unjudged
+  - id: 2026-05-24-003
+    pages: [wiki/concepts/e.md, wiki/concepts/f.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: unresolved
+  - id: 2026-05-24-004
+    pages: [wiki/concepts/g.md, wiki/concepts/h.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: deferred
+  - id: 2026-05-24-005
+    pages: [wiki/concepts/i.md, wiki/concepts/j.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: not-a-contradiction
+  - id: 2026-05-24-006
+    pages: [wiki/concepts/k.md, wiki/concepts/l.md]
+    signal: conflicting-relations
+    signal_data: { relation: refines, shared_targets: [], a_only_targets: [], b_only_targets: [] }
+    status: resolved-pick-a

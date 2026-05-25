@@ -200,7 +200,29 @@ The `--data` payload's `wrote` list is the same `wiki_pages` array that `state-s
 
 This step runs unconditionally on every successful source commit. Interactive ingest also benefits: the user may not remember tomorrow what they ingested today, and `/second-brain:status review` becomes the durable trail.
 
-### 10. Report results
+### 10. Scan for contradiction candidates
+
+Now that this source's wiki pages exist, run the cheap candidate scan limited
+to just the pages touched, plus their one-hop wikilink neighbours. New
+candidates land in `wiki/.state/contradictions.yaml` as `status: unjudged`;
+the next `/second-brain:status reconcile --judge-only` cron will judge them.
+
+```bash
+node "$CLAUDE_PLUGIN_ROOT/scripts/contradictions.js" candidates \
+  --scope=<comma-separated list of wiki page paths just written>
+```
+
+The `--scope` argument is the same `wiki_pages` array `state-sources commit`
+recorded into `sources.yaml`. The script handles one-hop neighbour expansion
+internally (and caps at 50 pages — hub overflow truncates with a stderr
+warning, exit stays 0).
+
+This step does not block ingest and does not append a review-log entry —
+candidate enqueueing is a deterministic side-effect, not a user-reviewable
+event. Only `judge` and interactive `reconcile` resolutions produce
+review-log entries.
+
+### 11. Report results
 
 Tell the user what was done:
 - Pages created (with links)

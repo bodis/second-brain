@@ -31,10 +31,35 @@ Present both arrays grouped together. For each `broken` entry, suggest either fi
 
 ### 2. Contradictions
 
-Read pages that share entities or concepts and look for conflicting claims. Flag when:
-- Two source summaries make opposing claims about the same topic
-- An entity page contains information that conflicts with a source summary
-- Dates, figures, or factual claims differ between pages
+Contradiction-finding now flows through `scripts/contradictions.js`. Lint
+performs the full-vault candidate scan (enqueueing any new pairs into
+`wiki/.state/contradictions.yaml` as `status: unjudged`) and reports the
+lifecycle counts back to the user.
+
+```bash
+# Full-vault scan: enqueue any newly-detected candidate pairs.
+node "$CLAUDE_PLUGIN_ROOT/scripts/contradictions.js" candidates --scope=wiki/
+```
+
+```bash
+# Report counts across the lifecycle.
+node "$CLAUDE_PLUGIN_ROOT/scripts/contradictions.js" list \
+  --status=unjudged,unresolved,deferred --json
+```
+
+Tally the counts by `status` and surface them under "Warnings" in the
+report:
+
+```
+Contradictions: N unjudged, M unresolved, K deferred.
+Run /second-brain:status reconcile (interactive) or schedule --judge-only via cron.
+```
+
+Do **not** read pages to look for prose contradictions in this step — the
+script narrows candidates deterministically and the LLM judge pass
+(`/second-brain:status reconcile --judge-only`) does the prose-level
+filtering. Lint is the trigger for the full-vault scan; the judge pass
+is asynchronous.
 
 ### 3. Stale claims
 

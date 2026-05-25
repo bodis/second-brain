@@ -301,6 +301,17 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# Test: status.js counts unjudged + (unresolved + deferred) correctly.
+echo ""
+echo "Test: status.js contradictions lifecycle predicates"
+V_LC=$(make_vault vault-lifecycle)
+cp "$REPO_ROOT/tests/fixtures/status/contradictions-lifecycle/wiki/.state/contradictions.yaml" \
+   "$V_LC/wiki/.state/contradictions.yaml"
+OUT=$( (cd "$V_LC" && node "$REPO_ROOT/scripts/status.js" --json) )
+assert_eq "unjudged_candidates === 2" "2" "$(echo "$OUT" | json_path 'contradictions.unjudged_candidates')"
+assert_eq "unresolved === 2 (1 unresolved + 1 deferred)" "2" "$(echo "$OUT" | json_path 'contradictions.unresolved')"
+assert_eq "contradictions.present === true" "true" "$(echo "$OUT" | json_path 'contradictions.present')"
+
 echo ""
 echo "=== Results ==="
 echo "PASS: $PASS"

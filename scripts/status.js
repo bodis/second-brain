@@ -99,11 +99,13 @@ function readContradictions(vault) {
   const doc = readStateYaml(vault, 'contradictions.yaml');
   if (!doc) return { unjudged_candidates: 0, unresolved: 0, present: false };
   const entries = Array.isArray(doc.contradictions) ? doc.contradictions : [];
-  let unresolved = 0;
+  let unjudged = 0, unresolved = 0;
   for (const e of entries) {
-    if (e && e.status === 'unresolved') unresolved += 1;
+    if (!e) continue;
+    if (e.status === 'unjudged') unjudged += 1;
+    else if (e.status === 'unresolved' || e.status === 'deferred') unresolved += 1;
   }
-  return { unjudged_candidates: 0, unresolved, present: true };
+  return { unjudged_candidates: unjudged, unresolved, present: true };
 }
 function readStaleness(vault) {
   const doc = readStateYaml(vault, 'staleness.yaml');
