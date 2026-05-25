@@ -609,6 +609,54 @@ case "$fm" in
   *) assert_eq "default since" "expected since: $expected_since" "$fm" ;;
 esac
 
+echo "==> check: clean page -> no warnings"
+V=$(make_vault check-clean)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/concepts/clean.md --json)
+count=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.warnings.length))")
+assert_eq "check clean: no warnings" "0" "$count"
+
+echo "==> check: historical page -> kind historical"
+V=$(make_vault check-historical)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/concepts/historical.md --json)
+kind=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.warnings[0]?d.warnings[0].kind:'')")
+assert_eq "check historical kind" "historical" "$kind"
+
+echo "==> check: superseded stub -> kind superseded"
+V=$(make_vault check-superseded)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/concepts/superseded-stub.md --json)
+kind=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.warnings[0]?d.warnings[0].kind:'')")
+assert_eq "check superseded kind" "superseded" "$kind"
+
+echo "==> check: archive file -> kind archived"
+V=$(make_vault check-archived)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/archive/2024/concepts/superseded-stub.md --json)
+kind=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.warnings[0]?d.warnings[0].kind:'')")
+assert_eq "check archived kind" "archived" "$kind"
+
+echo "==> check: stale-high (yaml) -> kind stale-high"
+V=$(make_vault check-stale-high)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/concepts/stale-high.md --json)
+kind=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.warnings[0]?d.warnings[0].kind:'')")
+assert_eq "check stale-high kind" "stale-high" "$kind"
+
+echo "==> check: medium-tier stale page -> NOT warned"
+V=$(make_vault check-medium-quiet)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/check-input/wiki/." "$V/wiki/"
+cd "$V"
+json=$(node "$SCRIPT" check --pages=wiki/concepts/medium-page.md --json)
+count=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.warnings.length))")
+assert_eq "check medium: no warnings" "0" "$count"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

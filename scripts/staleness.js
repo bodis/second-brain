@@ -657,7 +657,49 @@ function cmdApplyHistorical(vault, args) {
   writeState(vault, doc);
   process.stdout.write(`${args.id}: historical (since ${since})\n`);
 }
-function cmdCheck()      { die('check: not implemented yet', 2); }
+function cmdCheck(vault, args) {
+  if (!args.pages) die('check: --pages <comma-list> is required', 2);
+  const paths = parseCommaList(args.pages) || [];
+  const doc = readState(vault);
+  const yamlEntries = doc ? doc.pages : [];
+
+  const warnings = [];
+  for (const p of paths) {
+    const abs = path.join(vault, p);
+    if (fs.existsSync(abs)) {
+      const text = fs.readFileSync(abs, 'utf8');
+      const { fm } = splitFrontmatter(text);
+      if (fm) {
+        const fmObj = parseFrontmatter(fm);
+        const lc = fmObj && fmObj.lifecycle;
+        if (lc && typeof lc === 'object' && lc.state) {
+          const w = { path: p, kind: lc.state };
+          if (lc.since) w.since = lc.since;
+          if (lc.by) w.by = lc.by;
+          if (lc.original) w.original = lc.original;
+          warnings.push(w);
+          continue;
+        }
+      }
+    }
+    const entry = yamlEntries.find((e) => e && e.path === p);
+    if (entry && entry.status === 'unreviewed' && entry.signal === 'high') {
+      warnings.push({ path: p, kind: 'stale-high', factors: entry.factors });
+    }
+  }
+
+  if (args.json) {
+    process.stdout.write(JSON.stringify({ warnings }, null, 2) + '\n');
+    return;
+  }
+  if (warnings.length === 0) {
+    process.stdout.write('(no warnings)\n');
+    return;
+  }
+  for (const w of warnings) {
+    process.stdout.write(`${w.path}\t${w.kind}${w.since ? `\tsince=${w.since}` : ''}\n`);
+  }
+}
 
 function main() {
   const argv = process.argv.slice(2);
