@@ -129,7 +129,146 @@ function findEntry(doc, id) {
   return (doc.pages || []).find((e) => e && e.id === id) || null;
 }
 
-function cmdCandidates() { die('candidates: not implemented yet', 2); }
+const CANDIDATE_DIRS = ['wiki/entities', 'wiki/concepts', 'wiki/synthesis', 'wiki/sources'];
+const ARCHIVE_PREFIX = 'wiki/archive/';
+const TINY_VAULT_THRESHOLD = 20;
+const STRONG_CUTOFF = 0.75;   // p75
+const PRESENT_CUTOFF = 0.50;  // p50
+const AUTODEFER_DELTA = 0.10;
+
+// Recursively list .md files under the candidate dirs, vault-relative.
+function listCandidatePages(vault) {
+  const out = [];
+  for (const sub of CANDIDATE_DIRS) {
+    const abs = path.join(vault, sub);
+    if (!fs.existsSync(abs)) continue;
+    walk(abs, vault, out);
+  }
+  return out;
+}
+function walk(dir, vault, out) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    const rel = path.relative(vault, full).split(path.sep).join('/');
+    if (rel.startsWith(ARCHIVE_PREFIX)) continue;
+    if (entry.isDirectory()) walk(full, vault, out);
+    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(rel);
+  }
+}
+
+// Returns the fractional rank of x in the sorted-ascending array `sorted`
+// (number of values ≤ x divided by length). Returns 0 when sorted is empty.
+function fractionalRank(sorted, x) {
+  if (sorted.length === 0) return 0;
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sorted[mid] <= x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo / sorted.length;
+}
+
+function ageMonths(mtimeMs) {
+  const ms = Date.now() - mtimeMs;
+  return ms / (1000 * 60 * 60 * 24 * 30.4375);
+}
+
+function tierFromCutoffs(percentile) {
+  if (percentile >= STRONG_CUTOFF) return 'strong';
+  if (percentile >= PRESENT_CUTOFF) return 'present';
+  return 'weak';
+}
+function compositeFromTiers(t1, t2) {
+  const strongCount = (t1 === 'strong' ? 1 : 0) + (t2 === 'strong' ? 1 : 0);
+  const presentCount = (t1 !== 'weak' ? 1 : 0) + (t2 !== 'weak' ? 1 : 0);
+  if (strongCount === 2) return 'high';
+  if (strongCount === 1 && presentCount === 2) return 'medium';
+  return 'low';
+}
+
+function cmdCandidates(vault, args) {
+  const pages = listCandidatePages(vault);
+  const existing = readState(vault) || { pages: [] };
+
+  if (pages.length < TINY_VAULT_THRESHOLD) {
+    process.stderr.write(`warning: vault has ${pages.length} candidate-eligible pages (<${TINY_VAULT_THRESHOLD}); skipping scan\n`);
+    writeState(vault, {
+      scanned_at: nowIso(),
+      vault_page_count: pages.length,
+      pages: existing.pages.filter((e) => e.status !== 'unjudged'),
+    });
+    return;
+  }
+
+  // 1. Stat every page; collect mtimes for percentile computation.
+  const mtimes = [];
+  const stats = new Map();
+  for (const p of pages) {
+    const s = fs.statSync(path.join(vault, p));
+    stats.set(p, s);
+    mtimes.push(s.mtimeMs);
+  }
+  const sortedMtimes = [...mtimes].sort((a, b) => a - b);
+
+  // 2. Per-page scoring. Older mtime = higher age_percentile.
+  // age_percentile = 1 - fractionalRank(sortedMtimes, this mtime).
+  const scored = [];
+  for (const p of pages) {
+    const s = stats.get(p);
+    const rank = fractionalRank(sortedMtimes, s.mtimeMs);
+    const agePercentile = 1 - rank;
+    const movedPastPercentile = 0;   // implemented in Task 5
+    const newerOverlappingSources = 0;
+    const score = agePercentile * movedPastPercentile;
+    const ageTier = tierFromCutoffs(agePercentile);
+    const movedTier = tierFromCutoffs(movedPastPercentile);
+    const signal = compositeFromTiers(ageTier, movedTier);
+    scored.push({
+      path: p,
+      signal,
+      factors: {
+        age_months: Number(ageMonths(s.mtimeMs).toFixed(1)),
+        age_percentile: Number(agePercentile.toFixed(3)),
+        newer_overlapping_sources: newerOverlappingSources,
+        moved_past_percentile: Number(movedPastPercentile.toFixed(3)),
+      },
+      score,
+    });
+  }
+
+  // 3. Merge with existing entries. Drop existing `unjudged`; preserve others.
+  const preserved = existing.pages.filter((e) => e.status !== 'unjudged');
+  const preservedPaths = new Set(preserved.map((e) => e.path));
+  const newEntries = [];
+  for (const s of scored) {
+    if (preservedPaths.has(s.path)) continue;
+    // Only enqueue medium-or-high tier as a new candidate. low tier is noise.
+    if (s.signal === 'low') continue;
+    newEntries.push({
+      id: allocateId([...preserved, ...newEntries]),
+      path: s.path,
+      signal: s.signal,
+      factors: s.factors,
+      last_reviewed_signal_score: null,
+      status: 'unjudged',
+      judgment: null,
+      resolution: null,
+      resolved_at: null,
+      deferred_at: null,
+    });
+  }
+
+  writeState(vault, {
+    scanned_at: nowIso(),
+    vault_page_count: pages.length,
+    pages: [...preserved, ...newEntries],
+  });
+
+  if (args.json) {
+    process.stdout.write(JSON.stringify({ pages: [...preserved, ...newEntries] }, null, 2) + '\n');
+  }
+}
 
 function parseCommaList(v) {
   if (!v || v === true) return null;

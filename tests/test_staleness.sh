@@ -197,6 +197,43 @@ case "$output" in
   *) assert_eq "human format" "id path status signal on one line" "$output" ;;
 esac
 
+echo "==> candidates: age-only scan writes state file but enqueues nothing (composite low without moved_past)"
+V=$(make_vault age-only-vault)
+cp "$REPO_ROOT/tests/fixtures/staleness/age-only/wiki/.state/frontmatter-contract.yaml" "$V/wiki/.state/"
+# Create 25 pages with mtimes staggered around 2026-05; one (p1) is much older.
+for i in $(seq 1 25); do
+  f="$V/wiki/concepts/p$i.md"
+  cat > "$f" <<'MDEOF'
+---
+tags: []
+sources: [raw/dummy.md]
+created: 2024-01-01
+updated: 2024-01-01
+---
+MDEOF
+  echo "# P$i" >> "$f"
+done
+touch -t 202201010000 "$V/wiki/concepts/p1.md"
+for i in $(seq 2 25); do touch -t 202605010000 "$V/wiki/concepts/p$i.md"; done
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+[ -f wiki/.state/staleness.yaml ] && exists=yes || exists=no
+assert_eq "staleness.yaml created" "yes" "$exists"
+# vault_page_count should be 25.
+vpc=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.pages.length))")
+# pages: should be empty — all composites are low without moved_past.
+assert_eq "no pages enqueued (all low-tier)" "0" "$vpc"
+# But the file must contain the scanned_at + vault_page_count meta.
+output=$(cat wiki/.state/staleness.yaml)
+case "$output" in
+  *"vault_page_count: 25"*) assert_eq "vault_page_count meta" "ok" "ok" ;;
+  *) assert_eq "vault_page_count meta" "expected vault_page_count: 25" "$output" ;;
+esac
+case "$output" in
+  *"scanned_at:"*) assert_eq "scanned_at meta" "ok" "ok" ;;
+  *) assert_eq "scanned_at meta" "expected scanned_at: ..." "$output" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
