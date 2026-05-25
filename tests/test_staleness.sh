@@ -332,6 +332,20 @@ node "$SCRIPT" candidates >/dev/null
 status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/old.md');process.stdout.write(e?e.status:'(missing)')")
 assert_eq "old re-promoted to unjudged" "unjudged" "$status"
 
+echo "==> candidates --scope: restricts what gets enqueued, not what gets percentile-ranked"
+V=$(make_vault scope)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/both-signals-high/wiki/." "$V/wiki/"
+# Pin padding mtimes for deterministic ranking (cp -R doesn't preserve).
+for i in $(seq 1 22); do touch -t 202605010000 "$V/wiki/concepts/padding-$i.md"; done
+touch -t 202401010000 "$V/wiki/concepts/stale-page.md"
+cd "$V"
+node "$SCRIPT" candidates --scope=wiki/concepts/stale-page.md >/dev/null
+json=$(node "$SCRIPT" list --json)
+stale_present=$(echo "$json" | grep -c '"path": "wiki/concepts/stale-page.md"' || true)
+padding_present=$(echo "$json" | grep -c '"path": "wiki/concepts/padding-1.md"' || true)
+assert_eq "scoped page present" "1" "$stale_present"
+assert_eq "out-of-scope padding absent" "0" "$padding_present"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -244,9 +244,24 @@ function compositeFromTiers(t1, t2) {
   return 'low';
 }
 
+function parseScope(scope) {
+  if (!scope || scope === true) return null;
+  return String(scope).split(',').map((s) => s.trim()).filter(Boolean);
+}
+function inScope(p, scopeList) {
+  if (!scopeList) return true;
+  for (const s of scopeList) {
+    if (p === s) return true;
+    if (s.endsWith('/') && p.startsWith(s)) return true;
+    if (!s.endsWith('/') && p.startsWith(s + '/')) return true;
+  }
+  return false;
+}
+
 function cmdCandidates(vault, args) {
   const pages = listCandidatePages(vault);
   const existing = readState(vault) || { pages: [] };
+  const scopeList = parseScope(args.scope);
 
   if (pages.length < TINY_VAULT_THRESHOLD) {
     process.stderr.write(`warning: vault has ${pages.length} candidate-eligible pages (<${TINY_VAULT_THRESHOLD}); skipping scan\n`);
@@ -358,6 +373,7 @@ function cmdCandidates(vault, args) {
   for (const s of scored) {
     if (preservedPaths.has(s.path)) continue;
     if (s.signal === 'low') continue;
+    if (!inScope(s.path, scopeList)) continue;
     newEntries.push({
       id: allocateId([...preserved, ...newEntries]),
       path: s.path,
