@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { spawnSync } = require('child_process');
 
 const SCHEMA_VERSION = 1;
 const GENERATED_BY = 'scripts/staleness.js';
@@ -479,7 +480,50 @@ function cmdResolve(vault, args) {
   writeState(vault, doc);
   process.stdout.write(`${args.id}: deferred\n`);
 }
-function cmdApplyRefresh(){die('apply-refresh: not implemented yet', 2); }
+function runValidateWiki(vault) {
+  const validatePath = path.join(__dirname, 'validate-wiki.js');
+  const r = spawnSync(process.execPath, [validatePath, 'all'], { cwd: vault, encoding: 'utf8' });
+  return { code: r.status, stderr: r.stderr, stdout: r.stdout };
+}
+
+function cmdApplyRefresh(vault, args) {
+  if (!args.id) die('apply-refresh: --id is required', 2);
+  if (!args.rewrite) die('apply-refresh: --rewrite <tmpfile> is required', 2);
+  if (!fs.existsSync(args.rewrite)) die(`apply-refresh: tmpfile not found: ${args.rewrite}`, 2);
+
+  const doc = readState(vault);
+  if (!doc) die(`apply-refresh: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`apply-refresh: id ${args.id} not found`, 3);
+  if (entry.status !== 'unreviewed') {
+    die(`apply-refresh: entry ${args.id} status is ${entry.status}, expected unreviewed`, 3);
+  }
+
+  const abs = path.join(vault, entry.path);
+  if (!fs.existsSync(abs)) die(`apply-refresh: page ${entry.path} no longer exists`, 3);
+  const original = fs.readFileSync(abs, 'utf8');
+  const rewrite = fs.readFileSync(args.rewrite, 'utf8');
+
+  // Atomic write.
+  const tmp = `${abs}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, rewrite);
+  fs.renameSync(tmp, abs);
+
+  const v = runValidateWiki(vault);
+  if (v.code !== 0) {
+    fs.writeFileSync(abs, original);
+    process.stderr.write(v.stderr || v.stdout || '');
+    die(`apply-refresh: validate-wiki failed (exit ${v.code}); reverted ${entry.path}`, 2);
+  }
+
+  const score = (entry.factors && Number(entry.factors.age_percentile) * Number(entry.factors.moved_past_percentile)) || 0;
+  entry.status = 'resolved';
+  entry.resolution = 'refreshed';
+  entry.resolved_at = nowIso();
+  entry.last_reviewed_signal_score = Number(score.toFixed(3));
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: refreshed\n`);
+}
 function cmdApplyArchive(){die('apply-archive: not implemented yet', 2); }
 function cmdApplyHistorical(){die('apply-historical: not implemented yet', 2); }
 function cmdCheck()      { die('check: not implemented yet', 2); }

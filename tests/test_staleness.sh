@@ -478,6 +478,62 @@ rc=$?
 set -e
 assert_eq "resolve bogus-kind exit" "2" "$rc"
 
+echo "==> apply-refresh: clean rewrite -> status resolved/refreshed"
+V=$(make_vault apply-refresh-happy)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-refresh-input/wiki/." "$V/wiki/"
+TMP=$(mktemp)
+cat > "$TMP" <<'MD'
+---
+tags: []
+sources: [raw/dummy.md]
+created: 2024-01-01
+updated: 2026-05-25
+---
+# Page
+New content reflecting current sources.
+MD
+cd "$V"
+node "$SCRIPT" apply-refresh --id=2026-05-25-001 --rewrite="$TMP" >/dev/null
+body=$(cat wiki/concepts/page.md)
+case "$body" in
+  *"New content"*) assert_eq "page updated" "ok" "ok" ;;
+  *) assert_eq "page updated" "expected 'New content' in body" "$body" ;;
+esac
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)")
+res=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].resolution)")
+assert_eq "apply-refresh status" "resolved" "$status"
+assert_eq "apply-refresh resolution" "refreshed" "$res"
+rm -f "$TMP"
+
+echo "==> apply-refresh: validate failure reverts file + entry stays unreviewed"
+V=$(make_vault apply-refresh-revert)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/apply-refresh-input/wiki/." "$V/wiki/"
+TMP=$(mktemp)
+cat > "$TMP" <<'MD'
+---
+tags: []
+sources: [raw/dummy.md]
+created: 2024-01-01
+updated: 2026-05-25
+---
+# Page
+Refers to [[doesnotexist]] which will fail wikilink validation.
+MD
+cd "$V"
+set +e
+node "$SCRIPT" apply-refresh --id=2026-05-25-001 --rewrite="$TMP" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "apply-refresh revert exit" "2" "$rc"
+body=$(cat wiki/concepts/page.md)
+case "$body" in
+  *"Old content"*) assert_eq "page reverted" "ok" "ok" ;;
+  *) assert_eq "page reverted" "expected 'Old content' in body" "$body" ;;
+esac
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)")
+assert_eq "entry stays unreviewed" "unreviewed" "$status"
+rm -f "$TMP"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
