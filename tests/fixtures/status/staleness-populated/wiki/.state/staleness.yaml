@@ -1,24 +1,32 @@
 schema_version: 1
 generated_by: scripts/staleness.js
 pages:
-  - path: wiki/concepts/old-thing-1.md
+  - id: 2026-05-20-001
+    path: wiki/concepts/old-thing-1.md
     signal: high
     status: unreviewed
-  - path: wiki/concepts/old-thing-2.md
+  - id: 2026-05-20-002
+    path: wiki/concepts/old-thing-2.md
     signal: high
     status: unreviewed
-  - path: wiki/concepts/old-thing-3.md
+  - id: 2026-05-20-003
+    path: wiki/concepts/old-thing-3.md
     signal: high
     status: unreviewed
-  - path: wiki/concepts/mid-thing-1.md
+  - id: 2026-05-20-004
+    path: wiki/concepts/mid-thing-1.md
     signal: medium
     status: unreviewed
-  - path: wiki/concepts/mid-thing-2.md
+  - id: 2026-05-20-005
+    path: wiki/concepts/mid-thing-2.md
     signal: medium
     status: unreviewed
-  - path: wiki/concepts/low-thing.md
+  - id: 2026-05-20-006
+    path: wiki/concepts/low-thing.md
     signal: low
-    status: unreviewed
-  - path: wiki/concepts/reviewed-high.md
+    status: unjudged
+  - id: 2026-05-20-007
+    path: wiki/concepts/reviewed-high.md
     signal: high
-    status: reviewed
+    status: resolved
+    resolution: refreshed

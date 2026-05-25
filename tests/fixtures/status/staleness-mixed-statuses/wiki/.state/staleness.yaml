@@ -1,0 +1,24 @@
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    status: unreviewed
+  - id: 2026-05-25-002
+    path: wiki/concepts/b.md
+    signal: medium
+    status: unreviewed
+  - id: 2026-05-25-003
+    path: wiki/concepts/c.md
+    signal: high
+    status: deferred
+  - id: 2026-05-25-004
+    path: wiki/concepts/d.md
+    signal: high
+    status: dismissed
+  - id: 2026-05-25-005
+    path: wiki/concepts/e.md
+    signal: high
+    status: resolved
+    resolution: refreshed

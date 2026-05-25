@@ -173,7 +173,7 @@ OUT=$( (cd "$V5" && node "$SCRIPT" --json) )
 assert_eq "staleness.unresolved_high === 3"     "3"    "$(echo "$OUT" | json_path 'staleness.unresolved_high')"
 assert_eq "staleness.unresolved_medium === 2"   "2"    "$(echo "$OUT" | json_path 'staleness.unresolved_medium')"
 assert_eq "staleness.present === true"          "true" "$(echo "$OUT" | json_path 'staleness.present')"
-assert_eq "staleness.unjudged_candidates === 0" "0"    "$(echo "$OUT" | json_path 'staleness.unjudged_candidates')"
+assert_eq "staleness.unjudged_candidates === 1" "1"    "$(echo "$OUT" | json_path 'staleness.unjudged_candidates')"
 
 # Test 8: since-review.yaml with 5 changes → change_count === 5.
 echo ""
@@ -311,6 +311,25 @@ OUT=$( (cd "$V_LC" && node "$REPO_ROOT/scripts/status.js" --json) )
 assert_eq "unjudged_candidates === 2" "2" "$(echo "$OUT" | json_path 'contradictions.unjudged_candidates')"
 assert_eq "unresolved === 2 (1 unresolved + 1 deferred)" "2" "$(echo "$OUT" | json_path 'contradictions.unresolved')"
 assert_eq "contradictions.present === true" "true" "$(echo "$OUT" | json_path 'contradictions.present')"
+
+echo "==> staleness.unjudged_candidates reflects status: unjudged"
+V_UJ="$TEST_DIR/staleness-unjudged"
+cp -R "$REPO_ROOT/tests/fixtures/status/staleness-unjudged-counted" "$V_UJ"
+( cd "$V_UJ" && git init -q && git add -A && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm init >/dev/null )
+v=$( cd "$V_UJ" && node "$SCRIPT" --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.staleness.unjudged_candidates))" )
+assert_eq "unjudged_candidates" "2" "$v"
+
+echo "==> staleness mixed: only unreviewed surfaces in unresolved counts"
+V_MX="$TEST_DIR/staleness-mixed"
+cp -R "$REPO_ROOT/tests/fixtures/status/staleness-mixed-statuses" "$V_MX"
+( cd "$V_MX" && git init -q && git add -A && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm init >/dev/null )
+json=$( cd "$V_MX" && node "$SCRIPT" --json )
+high=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.staleness.unresolved_high))")
+med=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.staleness.unresolved_medium))")
+unj=$(echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.staleness.unjudged_candidates))")
+assert_eq "mixed: unresolved_high (only unreviewed)" "1" "$high"
+assert_eq "mixed: unresolved_medium" "1" "$med"
+assert_eq "mixed: no unjudged" "0" "$unj"
 
 echo ""
 echo "=== Results ==="
