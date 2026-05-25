@@ -460,7 +460,25 @@ function cmdJudge(vault, args) {
   writeState(vault, doc);
   process.stdout.write(`${args.id}: ${args.verdict} -> ${newStatus}\n`);
 }
-function cmdResolve()    { die('resolve: not implemented yet', 2); }
+function cmdResolve(vault, args) {
+  if (!args.id) die('resolve: --id is required', 2);
+  if (args.kind !== 'defer') {
+    die(`resolve: unsupported --kind ${args.kind} (only 'defer' is handled here; use apply-refresh/archive/historical)`, 2);
+  }
+  const doc = readState(vault);
+  if (!doc) die(`resolve: ${STATE_FILE} not found`, 3);
+  const entry = findEntry(doc, args.id);
+  if (!entry) die(`resolve: id ${args.id} not found`, 3);
+  if (entry.status !== 'unreviewed') {
+    die(`resolve: entry ${args.id} status is ${entry.status}, expected unreviewed`, 3);
+  }
+  const score = (entry.factors && Number(entry.factors.age_percentile) * Number(entry.factors.moved_past_percentile)) || 0;
+  entry.status = 'deferred';
+  entry.deferred_at = nowIso();
+  entry.last_reviewed_signal_score = Number(score.toFixed(3));
+  writeState(vault, doc);
+  process.stdout.write(`${args.id}: deferred\n`);
+}
 function cmdApplyRefresh(){die('apply-refresh: not implemented yet', 2); }
 function cmdApplyArchive(){die('apply-archive: not implemented yet', 2); }
 function cmdApplyHistorical(){die('apply-historical: not implemented yet', 2); }

@@ -418,6 +418,66 @@ case "$output" in
   *) assert_eq "error mentions not found" "expected 'not found'" "$output" ;;
 esac
 
+echo "==> resolve defer: unreviewed -> deferred"
+V=$(make_vault resolve-happy)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    factors: {age_months: 24, age_percentile: 0.9, newer_overlapping_sources: 10, moved_past_percentile: 0.9}
+    last_reviewed_signal_score: 0.81
+    status: unreviewed
+    judgment: {verdict: stale, reason: ".", neighbors_examined: [], judged_at: "2026-05-25T00:00:00Z"}
+    resolution: null
+    resolved_at: null
+    deferred_at: null
+YAML
+cd "$V"
+node "$SCRIPT" resolve --id=2026-05-25-001 --kind=defer >/dev/null
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(d.pages[0].status)")
+assert_eq "resolve defer: status" "deferred" "$status"
+
+echo "==> resolve defer: invalid source status -> exit 3"
+V=$(make_vault resolve-invalid)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    factors: {age_months: 24, age_percentile: 0.9, newer_overlapping_sources: 10, moved_past_percentile: 0.9}
+    last_reviewed_signal_score: 0.81
+    status: resolved
+    resolution: refreshed
+    judgment: null
+    resolved_at: "2026-05-25T00:00:00Z"
+    deferred_at: null
+YAML
+cd "$V"
+set +e
+node "$SCRIPT" resolve --id=2026-05-25-001 --kind=defer >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "resolve invalid-status exit" "3" "$rc"
+
+echo "==> resolve --kind=bogus -> exit 2"
+V=$(make_vault resolve-bogus-kind)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages: []
+YAML
+cd "$V"
+set +e
+node "$SCRIPT" resolve --id=2026-05-25-001 --kind=bogus >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "resolve bogus-kind exit" "2" "$rc"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
