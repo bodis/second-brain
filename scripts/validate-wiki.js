@@ -24,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-const SUBCOMMANDS = ['frontmatter', 'wikilinks', 'index', 'all'];
+const SUBCOMMANDS = ['frontmatter', 'wikilinks', 'index', 'lifecycle', 'all'];
 
 function die(msg, code = 1) {
   process.stderr.write(`error: ${msg}\n`);
@@ -261,13 +261,15 @@ function runAll(vault, json) {
   const fm = runFrontmatter(vault, true, true);
   const wl = runWikilinks(vault, true, true);
   const ix = runIndex(vault, true, true);
+  const lc = runLifecycle(vault, true, true);
 
   const parsed = {
     frontmatter: JSON.parse(fm.output || '{"errors":[],"warnings":[]}'),
     wikilinks: JSON.parse(wl.output || '{"broken":[],"orphans":[]}'),
     index: JSON.parse(ix.output || '{"missing_rows":[],"dead_rows":[]}'),
+    lifecycle: JSON.parse(lc.output || '{"errors":[]}'),
   };
-  const code = Math.max(fm.code, wl.code, ix.code);
+  const code = Math.max(fm.code, wl.code, ix.code, lc.code);
 
   if (json) {
     return { code, output: JSON.stringify(parsed, null, 2) + '\n' };
@@ -297,6 +299,11 @@ function runAll(vault, json) {
       );
     }
   }
+  if (lc.code !== 0) {
+    for (const e of parsed.lifecycle.errors) {
+      process.stderr.write(`lifecycle: ${e.path}: ${e.msg}\n`);
+    }
+  }
   return { code, output: '' };
 }
 
@@ -311,9 +318,27 @@ function runFrontmatter(vault, json, quiet = false) {
       errors.push({ path: rel, key: null, problem: fm.problem });
       continue;
     }
+    // A page with lifecycle.state == 'superseded' is a stub redirect whose
+    // sources list is legitimately empty (the archived target carries sources).
+    const isSupersededStub = fm.data.lifecycle &&
+      typeof fm.data.lifecycle === 'object' &&
+      !Array.isArray(fm.data.lifecycle) &&
+      fm.data.lifecycle.state === 'superseded';
+
     for (const [key, spec] of Object.entries(contract.required || {})) {
       if (!(key in fm.data)) {
         errors.push({ path: rel, key, problem: `missing required key '${key}'` });
+        continue;
+      }
+      // Exempt superseded stub pages from the sources may_be_empty: false rule.
+      if (key === 'sources' && spec.type === 'list[string]' && spec.may_be_empty === false && isSupersededStub) {
+        // Only exempt the emptiness check; other shape checks still apply.
+        const val = fm.data[key];
+        if (!Array.isArray(val)) {
+          errors.push({ path: rel, key, problem: 'expected a list of strings' });
+        } else if (!val.every(x => typeof x === 'string')) {
+          errors.push({ path: rel, key, problem: 'list contains non-string entries' });
+        }
         continue;
       }
       const problem = validateKey(fm.data[key], spec);
@@ -334,6 +359,61 @@ function runFrontmatter(vault, json, quiet = false) {
   if (!quiet) {
     for (const e of errors) {
       process.stderr.write(`frontmatter: ${e.path} ${e.problem}\n`);
+    }
+  }
+  return { code, output: '' };
+}
+
+const ALLOWED_LIFECYCLE_STATES = new Set(['historical', 'superseded', 'archived']);
+const SINCE_RE = /^\d{4}-\d{2}$/;
+
+function runLifecycle(vault, json, quiet = false) {
+  const contract = loadContract(vault);
+  const targets = expandTargets(vault, contract);
+  const errors = [];
+  for (const rel of targets) {
+    const abs = path.join(vault, rel);
+    const fm = readFrontmatter(abs);
+    if (!fm.ok) continue;  // structural errors caught by frontmatter rule
+    const lc = fm.data.lifecycle;
+    if (lc === undefined || lc === null) continue;  // no lifecycle block — skip
+    if (typeof lc !== 'object' || Array.isArray(lc)) {
+      errors.push({ path: rel, msg: 'lifecycle must be a mapping' });
+      continue;
+    }
+    if (!ALLOWED_LIFECYCLE_STATES.has(lc.state)) {
+      errors.push({
+        path: rel,
+        msg: `lifecycle.state must be historical|superseded|archived, got ${JSON.stringify(lc.state)}`,
+      });
+      continue;
+    }
+    if (lc.state === 'historical') {
+      if (typeof lc.since !== 'string' || !SINCE_RE.test(lc.since)) {
+        errors.push({ path: rel, msg: 'lifecycle.since must be YYYY-MM when state=historical' });
+      }
+    } else if (lc.state === 'superseded') {
+      if (typeof lc.by !== 'string') {
+        errors.push({ path: rel, msg: 'lifecycle.by must be a string when state=superseded' });
+      } else if (!fs.existsSync(path.join(vault, lc.by))) {
+        errors.push({ path: rel, msg: `lifecycle.by target does not exist: ${lc.by}` });
+      }
+    } else if (lc.state === 'archived') {
+      if (typeof lc.original !== 'string') {
+        errors.push({ path: rel, msg: 'lifecycle.original must be a string when state=archived' });
+      } else if (!fs.existsSync(path.join(vault, lc.original))) {
+        errors.push({ path: rel, msg: `lifecycle.original target does not exist: ${lc.original}` });
+      }
+    }
+  }
+  const code = errors.length > 0 ? 2 : 0;
+  if (json) {
+    return { code, output: JSON.stringify({ errors }, null, 2) + '\n' };
+  }
+  if (errors.length === 0) return { code: 0, output: '' };
+  if (!quiet) {
+    for (const e of errors) {
+      process.stderr.write(`lifecycle: ${e.path}: ${e.msg}\n`);
     }
   }
   return { code, output: '' };
@@ -464,6 +544,7 @@ function main() {
   if (cmd === 'frontmatter') return emit(runFrontmatter(vault, json));
   if (cmd === 'wikilinks') return emit(runWikilinks(vault, json));
   if (cmd === 'index') return emit(runIndex(vault, json));
+  if (cmd === 'lifecycle') return emit(runLifecycle(vault, json));
 }
 
 main();
