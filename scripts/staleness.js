@@ -591,8 +591,13 @@ function cmdApplyArchive(vault, args) {
   const stubBody = `See [[${archiveRel.replace(/\.md$/, '')}]] for the original content.\n`;
   const stubText = joinFrontmatter(stubFm, stubBody);
   const stubTmp = `${origAbs}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(stubTmp, stubText);
-  fs.renameSync(stubTmp, origAbs);
+  try {
+    fs.writeFileSync(stubTmp, stubText);
+    fs.renameSync(stubTmp, origAbs);
+  } catch (err) {
+    try { fs.unlinkSync(archiveAbs); } catch {}
+    die(`apply-archive: failed to write stub: ${err.message}`, 2);
+  }
 
   // 3. Validate.
   const v = runValidateWiki(vault);
