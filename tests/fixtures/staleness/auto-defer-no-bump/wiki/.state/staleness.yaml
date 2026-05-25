@@ -1,0 +1,15 @@
+schema_version: 1
+generated_by: scripts/staleness.js
+scanned_at: 2026-05-20T10:00:00Z
+vault_page_count: 25
+pages:
+  - id: 2026-05-20-001
+    path: wiki/concepts/p1.md
+    signal: medium
+    factors: {age_months: 28, age_percentile: 0.96, newer_overlapping_sources: 0, moved_past_percentile: 0.5}
+    last_reviewed_signal_score: 0.48
+    status: deferred
+    judgment: null
+    resolution: null
+    resolved_at: null
+    deferred_at: 2026-05-21T10:00:00Z

@@ -116,13 +116,17 @@ function readStaleness(vault) {
     present: false,
   };
   const entries = Array.isArray(doc.pages) ? doc.pages : [];
-  let unresolved_high = 0, unresolved_medium = 0;
+  let unjudged = 0, unresolved_high = 0, unresolved_medium = 0;
   for (const e of entries) {
-    if (!e || e.status !== 'unreviewed') continue;
-    if (e.signal === 'high')   unresolved_high   += 1;
-    if (e.signal === 'medium') unresolved_medium += 1;
+    if (!e) continue;
+    if (e.status === 'unjudged') {
+      unjudged += 1;
+    } else if (e.status === 'unreviewed') {
+      if (e.signal === 'high')   unresolved_high   += 1;
+      if (e.signal === 'medium') unresolved_medium += 1;
+    }
   }
-  return { unjudged_candidates: 0, unresolved_high, unresolved_medium, present: true };
+  return { unjudged_candidates: unjudged, unresolved_high, unresolved_medium, present: true };
 }
 function readSinceReview(vault) {
   const doc = readStateYaml(vault, 'since-review.yaml');

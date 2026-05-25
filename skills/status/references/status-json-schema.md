@@ -53,16 +53,21 @@ Read directly from `wiki/.state/contradictions.yaml` (owned by CR-007).
   (they are not actionable).
 
 ### `staleness`
-Read directly from `wiki/.state/staleness.yaml` (owned by CR-008).
-- **`present`** (boolean): `true` if the state file exists; `false` until
-  CR-008 lands.
-- **`unjudged_candidates`** (integer): always `0` in CR-009 (same forward-
-  compatibility reasoning as `contradictions.unjudged_candidates`).
-- **`unresolved_high`** (integer): count of entries with `signal: high` AND
-  `status: unreviewed`.
-- **`unresolved_medium`** (integer): count of entries with `signal: medium` AND
-  `status: unreviewed`. `signal: low` is intentionally not surfaced — the
-  dashboard routes the user to high+medium triage only.
+
+Read from `wiki/.state/staleness.yaml` (owned by `scripts/staleness.js`, CR-008).
+
+| Key | Predicate |
+|---|---|
+| `unjudged_candidates` | Count of `pages[]` entries with `status: unjudged`. The candidate scan has flagged them; the LLM judge has not yet run. |
+| `unresolved_high` | Count of `pages[]` entries with `status: unreviewed AND signal: high`. The judge ran with verdict `stale` or `drifting`; the user has not yet acted. |
+| `unresolved_medium` | Count of `pages[]` entries with `status: unreviewed AND signal: medium`. |
+| `present` | `true` when `staleness.yaml` exists and parses; `false` when missing. |
+
+`status: resolved | deferred | dismissed` entries are not surfaced in any count.
+
+Cron pattern:
+- If `unjudged_candidates > 0`, fire `/second-brain:status refresh --judge-only`.
+- If `unresolved_high + unresolved_medium > 0`, surface as "needs you" in the human dashboard and leave for the next interactive session.
 
 ### `since_review`
 Read directly from `wiki/.state/since-review.yaml`.

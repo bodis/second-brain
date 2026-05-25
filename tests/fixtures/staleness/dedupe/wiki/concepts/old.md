@@ -1,0 +1,8 @@
+---
+tags: []
+sources: [raw/dummy.md]
+created: 2024-01-01
+updated: 2024-01-01
+---
+# Old
+[[topic]]

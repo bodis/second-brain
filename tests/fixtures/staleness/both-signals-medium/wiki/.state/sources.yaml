@@ -1,0 +1,18 @@
+schema_version: 1
+generated_by: scripts/state-sources.js
+excludes: []
+sources:
+  - path: raw/y-1.md
+    kind: generic
+    sha256: cccc1
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/y-1.md]
+  - path: raw/y-2.md
+    kind: generic
+    sha256: cccc2
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/y-2.md]

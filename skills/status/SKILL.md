@@ -213,14 +213,109 @@ interactive `/status reconcile` resolution flow locates the paragraph to
 rewrite via this substring; imprecise quotes will cause `apply-pick` to
 exit 3 and force a deferral.
 
-## `/second-brain:status refresh`
+## `/second-brain:status refresh` (interactive)
 
-Placeholder until CR-008 lands. Print:
+Walks staleness candidates that the judge pass has marked as needing human action.
 
-```
-/status refresh is not yet available. CR-008 will implement staleness review.
-Until then, /second-brain:lint flags candidate stale pages in its report.
-```
+1. **Determine scope.** Default filter:
+
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" list \
+     --status=unreviewed --signal=high --json
+   ```
+
+   If the user passed `--all` (anywhere on the invocation), expand to `--signal=high,medium` and include `verdict: drifting` entries (these are computed from each entry's `judgment.verdict`). Always exclude `dismissed` and `deferred` from default scope; the user must pass `--include-deferred` to see them.
+
+2. **If the list is empty, print `nothing to refresh` and stop.**
+
+3. **Pre-compute rewrites.** For each in-scope entry, read its `path` and `judgment.neighbors_examined`, plus the entries in `wiki/.state/sources.yaml` that this page's entities show up in (sources newer than the page's `mtime`). Write a rewrite tmpfile at `/tmp/refresh-<id>.md` containing the rewritten page — preserve the page's existing frontmatter exactly (only the body changes), and end with an updated `updated:` date. This tmpfile is what `apply-refresh` will atomically replace the page with.
+
+4. **Walk the entries.** For each in-scope entry, print one display block:
+
+   ```
+   [N] wiki/concepts/<path>.md  (age <factors.age_months>mo, <factors.newer_overlapping_sources> newer sources)
+       <judgment.verdict>: <judgment.reason>
+   ```
+
+   Then prompt the user one of: `R / A / H / D / S` (refresh / archive / historical / defer / skip).
+
+   - **R (refresh):**
+
+     ```bash
+     node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" apply-refresh \
+       --id=<id> --rewrite=/tmp/refresh-<id>.md
+     ```
+
+     On exit 2 (validate-wiki failed; auto-reverted), report the validator's error to the user verbatim. The entry stays `unreviewed` and will appear in the next walk.
+
+   - **A (archive):**
+
+     ```bash
+     node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" apply-archive --id=<id>
+     ```
+
+   - **H (historical):** Ask the user inline for `since:` (default current `YYYY-MM`), then:
+
+     ```bash
+     node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" apply-historical \
+       --id=<id> --since=<YYYY-MM>
+     ```
+
+   - **D (defer):**
+
+     ```bash
+     node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" resolve \
+       --id=<id> --kind=defer
+     ```
+
+   - **S (skip):** make no script call; move to the next entry.
+
+5. **Group git commit at the end of the walk.** After all entries are processed, if any wiki/archive file changed:
+
+   ```bash
+   git -C "<vault>" add -A wiki/
+   git -C "<vault>" commit -m "refresh: N refreshed, M archived, K historical, J deferred"
+   ```
+
+6. **Append one summary line to `wiki/log.md`:**
+
+   ```
+   ## YYYY-MM-DD refresh | N refreshed, M archived, K historical, J deferred
+   ```
+
+7. **Do NOT append to `since-review.yaml`.** The user was present; per CR-009's review-log contract interactive resolutions are not logged to the inbox.
+
+## `/second-brain:status refresh --judge-only` (headless)
+
+Cron-safe entry. No prompts; drains `status: unjudged` into one of four verdict buckets.
+
+1. **Read all unjudged entries.**
+
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" list --status=unjudged --json
+   ```
+
+2. **For each entry, sample up to 5 neighbours.** Find wiki pages whose `mtime` is newer than this page's `mtime` AND that share at least one entity wikilink. One hop only. If fewer than 5 candidates exist, take what is available; if zero, judge with just the page (likely verdict: `false-positive` or `fresh-but-isolated`).
+
+3. **Read the page body + the sampled neighbour bodies + the entry's `factors` block.** Decide a verdict: `stale | drifting | fresh-but-isolated | false-positive`. Compose a one-sentence reason.
+
+4. **Persist the verdict:**
+
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" judge \
+     --id=<id> --verdict=<v> \
+     --data='{"reason":"<one sentence>","neighbors_examined":["wiki/...","wiki/..."]}'
+   ```
+
+5. **Append a review-log entry per CR-009 contract:**
+
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/scripts/review-log.js" append \
+     --kind=staleness-judged \
+     --data='{"page":"<path>","verdict":"<v>"}'
+   ```
+
+6. **Exit when the list is drained.** No `wiki/log.md` entry (no human action took place). The Stop hook will not run on `--headless` invocations, so no validate-wiki pass is triggered here either.
 
 ## Headless mode
 

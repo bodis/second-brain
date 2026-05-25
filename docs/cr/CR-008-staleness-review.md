@@ -1,5 +1,7 @@
 # CR-008 — Staleness review across wiki pages
 
+**Status:** implemented (2026-05-25). Spec: [`docs/superpowers/specs/2026-05-25-cr-008-staleness-review-design.md`](../superpowers/specs/2026-05-25-cr-008-staleness-review-design.md). Plan: [`docs/superpowers/plans/2026-05-25-cr-008-staleness-review.md`](../superpowers/plans/2026-05-25-cr-008-staleness-review.md).
+
 **Depends on:** CR-002 (state YAML), CR-004 (hooks + scripts), CR-005 (reorganize — shares conventions for frontmatter + log entries), [CR-009](./CR-009-status-dashboard.md) (status dashboard + review-log contract — owns the user-facing surface).
 
 ## Problem

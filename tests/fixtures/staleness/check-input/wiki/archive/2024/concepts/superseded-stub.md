@@ -1,0 +1,11 @@
+---
+tags: []
+sources: [raw/dummy.md]
+created: 2024-01-01
+updated: 2024-01-01
+lifecycle:
+  state: archived
+  original: wiki/concepts/superseded-stub.md
+---
+# Original
+Archived content.

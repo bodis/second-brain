@@ -1,0 +1,23 @@
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/stale-high.md
+    signal: high
+    factors: {age_months: 24, age_percentile: 0.9, newer_overlapping_sources: 10, moved_past_percentile: 0.9}
+    last_reviewed_signal_score: 0.81
+    status: unreviewed
+    judgment: {verdict: stale, reason: ".", neighbors_examined: [], judged_at: "2026-05-25T00:00:00Z"}
+    resolution: null
+    resolved_at: null
+    deferred_at: null
+  - id: 2026-05-25-002
+    path: wiki/concepts/medium-page.md
+    signal: medium
+    factors: {age_months: 12, age_percentile: 0.6, newer_overlapping_sources: 4, moved_past_percentile: 0.6}
+    last_reviewed_signal_score: 0.36
+    status: unreviewed
+    judgment: {verdict: stale, reason: ".", neighbors_examined: [], judged_at: "2026-05-25T00:00:00Z"}
+    resolution: null
+    resolved_at: null
+    deferred_at: null

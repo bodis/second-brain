@@ -1,0 +1,11 @@
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    status: unjudged
+  - id: 2026-05-25-002
+    path: wiki/concepts/b.md
+    signal: medium
+    status: unjudged

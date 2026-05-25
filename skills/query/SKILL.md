@@ -32,6 +32,35 @@ This is especially useful when the wiki has grown beyond ~100 pages where scanni
 
 Read the wiki pages identified by the index or search. Follow `[[wikilinks]]` to pull in related context from linked pages. Read enough pages to give a thorough answer, but don't read the entire wiki.
 
+### 3a. Check lifecycle and staleness
+
+Before composing the answer, check whether any cited page is marked historical/superseded/archived in its frontmatter, or flagged as `signal: high AND status: unreviewed` in `wiki/.state/staleness.yaml`. The script does the lookup:
+
+```bash
+node "$CLAUDE_PLUGIN_ROOT/scripts/staleness.js" check \
+  --pages=<comma-separated vault-relative paths> --json
+```
+
+The response shape:
+
+```json
+{
+  "warnings": [
+    { "path": "wiki/concepts/foo.md", "kind": "historical", "since": "2024-05" },
+    { "path": "wiki/concepts/bar.md", "kind": "stale-high",
+      "factors": { "age_months": 24, "newer_overlapping_sources": 12 } }
+  ]
+}
+```
+
+`kind` values: `historical | superseded | archived | stale-high`. Medium-signal staleness is intentionally not warned (too noisy for query-time).
+
+If `warnings` is non-empty, prepend a single one-line callout to the answer summarising affected pages by kind. Example:
+
+> Note: this answer cites 1 historical page (2024-05) and 1 page flagged stale-high. Newer information may exist.
+
+Do not block the answer — the user still gets the synthesis, only with the freshness caveat in front.
+
 ### 4. Check originals for verification or depth
 
 If the wiki pages don't fully answer the question, or you need exact wording, go to the originals — but the choice depends on the source kind recorded in `wiki/.state/sources.yaml`:

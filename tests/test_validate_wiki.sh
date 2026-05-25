@@ -375,6 +375,76 @@ assert_eq "wikilink-broken exit code" "1" "$RC"
 BROKEN_SOURCE=$(echo "$OUT" | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).broken[0].source))")
 assert_eq "wikilink-broken: source is 'wikilink'" "wikilink" "$BROKEN_SOURCE"
 
+# Test: lifecycle historical with since → pass
+echo ""
+echo "Test: lifecycle historical with since → exit 0"
+V=$(prepare_vault lifecycle-historical-valid)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-historical-valid exit 0" "0" "$RC"
+
+# Test: lifecycle superseded stub with valid by-target → pass
+echo ""
+echo "Test: lifecycle superseded stub with valid by-target → exit 0"
+V=$(prepare_vault lifecycle-superseded-valid)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-superseded-valid exit 0" "0" "$RC"
+
+# Test: lifecycle archived with valid original → pass
+echo ""
+echo "Test: lifecycle archived with valid original → exit 0"
+V=$(prepare_vault lifecycle-archived-valid)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-archived-valid exit 0" "0" "$RC"
+
+# Test: lifecycle bad state → exit 2
+echo ""
+echo "Test: lifecycle bad state → exit 2"
+V=$(prepare_vault lifecycle-bad-state)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-bad-state exit 2" "2" "$RC"
+
+# Test: lifecycle historical missing since → exit 2
+echo ""
+echo "Test: lifecycle historical missing since → exit 2"
+V=$(prepare_vault lifecycle-historical-missing-since)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-historical-missing-since exit 2" "2" "$RC"
+
+# Test: lifecycle superseded with broken by-target → exit 2
+echo ""
+echo "Test: lifecycle superseded with broken by-target → exit 2"
+V=$(prepare_vault lifecycle-superseded-broken-by)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-superseded-broken-by exit 2" "2" "$RC"
+
+# Test: lifecycle stub with empty sources still passes frontmatter rule (sources exemption)
+echo ""
+echo "Test: lifecycle stub with empty sources → exit 0 (exemption applies)"
+V=$(prepare_vault lifecycle-stub-sources-empty-ok)
+set +e
+OUT=$( (cd "$V" && node "$SCRIPT" all --json) 2>&1 )
+RC=$?
+set -e
+assert_eq "lifecycle-stub-sources-empty-ok exit 0" "0" "$RC"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
