@@ -301,6 +301,37 @@ assert_eq "empty exit code" "0" "$rc"
 pages=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.pages.length))")
 assert_eq "empty: zero pages" "0" "$pages"
 
+echo "==> candidates: dedupe preserves non-unjudged, drops unjudged"
+V=$(make_vault dedupe)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/dedupe/wiki/." "$V/wiki/"
+touch -t 202401010000 "$V/wiki/concepts/old.md"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+json=$(node "$SCRIPT" list --json)
+resolved_present=$(echo "$json" | grep -c '"id": "2026-05-20-002"' || true)
+unjudged_001_present=$(echo "$json" | grep -c '"id": "2026-05-20-001"' || true)
+assert_eq "resolved entry preserved" "1" "$resolved_present"
+assert_eq "old unjudged entry dropped" "0" "$unjudged_001_present"
+
+echo "==> candidates: deferred entry stays deferred when score unchanged"
+V=$(make_vault adef-no-bump)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/auto-defer-no-bump/wiki/." "$V/wiki/"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/p1.md');process.stdout.write(e?e.status:'(missing)')")
+assert_eq "p1 still deferred" "deferred" "$status"
+
+echo "==> candidates: deferred entry returns to unjudged when score bumps"
+V=$(make_vault adef-bumped)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/auto-defer-bumped/wiki/." "$V/wiki/"
+# Padding pages need explicit mtimes (cp -R does not preserve).
+for i in $(seq 1 22); do touch -t 202605010000 "$V/wiki/concepts/padding-$i.md"; done
+touch -t 202401010000 "$V/wiki/concepts/old.md"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+status=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/old.md');process.stdout.write(e?e.status:'(missing)')")
+assert_eq "old re-promoted to unjudged" "unjudged" "$status"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

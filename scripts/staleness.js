@@ -323,13 +323,40 @@ function cmdCandidates(vault, args) {
     });
   }
 
-  // 3. Merge with existing entries. Drop existing `unjudged`; preserve others.
-  const preserved = existing.pages.filter((e) => e.status !== 'unjudged');
+  // 3. Merge with existing entries.
+  // - Drop existing status:unjudged (will be re-derived from current scan).
+  // - Preserve unreviewed/resolved as-is.
+  // - For deferred/dismissed: keep status unchanged UNLESS the new score
+  //   exceeds last_reviewed_signal_score + AUTODEFER_DELTA; then re-promote
+  //   to unjudged with fresh factors.
+  const scoreByPath = new Map(scored.map((s) => [s.path, s]));
+  const preserved = [];
+  for (const e of existing.pages) {
+    if (!e || !e.status) continue;
+    if (e.status === 'unjudged') continue;
+    if ((e.status === 'deferred' || e.status === 'dismissed') && scoreByPath.has(e.path)) {
+      const fresh = scoreByPath.get(e.path);
+      const baseline = typeof e.last_reviewed_signal_score === 'number' ? e.last_reviewed_signal_score : 0;
+      if (fresh.score > baseline + AUTODEFER_DELTA) {
+        preserved.push({
+          ...e,
+          signal: fresh.signal,
+          factors: fresh.factors,
+          status: 'unjudged',
+          judgment: null,
+          resolution: null,
+          resolved_at: null,
+          deferred_at: null,
+        });
+        continue;
+      }
+    }
+    preserved.push(e);
+  }
   const preservedPaths = new Set(preserved.map((e) => e.path));
   const newEntries = [];
   for (const s of scored) {
     if (preservedPaths.has(s.path)) continue;
-    // Only enqueue medium-or-high tier as a new candidate. low tier is noise.
     if (s.signal === 'low') continue;
     newEntries.push({
       id: allocateId([...preserved, ...newEntries]),

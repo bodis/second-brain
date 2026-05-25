@@ -1,0 +1,74 @@
+schema_version: 1
+generated_by: scripts/state-sources.js
+excludes: []
+sources:
+  - path: raw/z-1.md
+    kind: generic
+    sha256: dddd1
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-1.md]
+  - path: raw/z-2.md
+    kind: generic
+    sha256: dddd2
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-2.md]
+  - path: raw/z-3.md
+    kind: generic
+    sha256: dddd3
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-3.md]
+  - path: raw/z-4.md
+    kind: generic
+    sha256: dddd4
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-4.md]
+  - path: raw/z-5.md
+    kind: generic
+    sha256: dddd5
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-5.md]
+  - path: raw/z-6.md
+    kind: generic
+    sha256: dddd6
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-6.md]
+  - path: raw/z-7.md
+    kind: generic
+    sha256: dddd7
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-7.md]
+  - path: raw/z-8.md
+    kind: generic
+    sha256: dddd8
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-8.md]
+  - path: raw/z-9.md
+    kind: generic
+    sha256: dddd9
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-9.md]
+  - path: raw/z-10.md
+    kind: generic
+    sha256: dddd10
+    bytes: 100
+    mtime: 2026-05-21T00:00:00Z
+    ingested_at: 2026-05-21T01:00:00Z
+    wiki_pages: [wiki/sources/z-10.md]
