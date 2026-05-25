@@ -259,6 +259,48 @@ case "$signal" in
   *) assert_eq "recent-page composite OK" "ok" "ok" ;;
 esac
 
+echo "==> candidates: borderline page gets medium composite"
+V=$(make_vault both-medium)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/both-signals-medium/wiki/." "$V/wiki/"
+# Match the Task 5 pattern: explicit mtimes on padding too, since cp -R does not preserve them on macOS.
+for i in $(seq 1 22); do touch -t 202605010000 "$V/wiki/concepts/padding-$i.md"; done
+touch -t 202401010000 "$V/wiki/concepts/borderline.md"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+signal=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/borderline.md');process.stdout.write(e?e.signal:'(missing)')")
+case "$signal" in
+  medium|high) assert_eq "borderline signal" "$signal" "$signal" ;;
+  *) assert_eq "borderline signal" "medium or high" "$signal" ;;
+esac
+
+echo "==> candidates: tiny vault → empty + warning"
+V=$(make_vault tiny)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/tiny-vault/wiki/." "$V/wiki/"
+cd "$V"
+set +e
+output=$(node "$SCRIPT" candidates 2>&1)
+rc=$?
+set -e
+assert_eq "tiny exit code" "0" "$rc"
+case "$output" in
+  *"<20"*|*"candidate-eligible"*) assert_eq "tiny warning emitted" "ok" "ok" ;;
+  *) assert_eq "tiny warning emitted" "expected '<20' or 'candidate-eligible'" "$output" ;;
+esac
+pages=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.pages.length))")
+assert_eq "tiny: no pages enqueued" "0" "$pages"
+
+echo "==> candidates: empty vault → empty + warning"
+V=$(make_vault empty)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/empty-vault/wiki/." "$V/wiki/"
+cd "$V"
+set +e
+node "$SCRIPT" candidates >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "empty exit code" "0" "$rc"
+pages=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));process.stdout.write(String(d.pages.length))")
+assert_eq "empty: zero pages" "0" "$pages"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
