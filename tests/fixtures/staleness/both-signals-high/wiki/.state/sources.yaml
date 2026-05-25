@@ -1,0 +1,68 @@
+schema_version: 1
+generated_by: scripts/state-sources.js
+excludes: []
+sources:
+  - path: raw/newer-1.md
+    kind: generic
+    sha256: aaaa1
+    bytes: 100
+    mtime: 2026-04-01T00:00:00Z
+    ingested_at: 2026-04-01T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-1.md
+  - path: raw/newer-2.md
+    kind: generic
+    sha256: aaaa2
+    bytes: 100
+    mtime: 2026-04-02T00:00:00Z
+    ingested_at: 2026-04-02T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-2.md
+  - path: raw/newer-3.md
+    kind: generic
+    sha256: aaaa3
+    bytes: 100
+    mtime: 2026-04-03T00:00:00Z
+    ingested_at: 2026-04-03T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-3.md
+  - path: raw/newer-4.md
+    kind: generic
+    sha256: aaaa4
+    bytes: 100
+    mtime: 2026-04-04T00:00:00Z
+    ingested_at: 2026-04-04T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-4.md
+  - path: raw/newer-5.md
+    kind: generic
+    sha256: aaaa5
+    bytes: 100
+    mtime: 2026-04-05T00:00:00Z
+    ingested_at: 2026-04-05T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-5.md
+  - path: raw/newer-6.md
+    kind: generic
+    sha256: aaaa6
+    bytes: 100
+    mtime: 2026-04-06T00:00:00Z
+    ingested_at: 2026-04-06T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-6.md
+  - path: raw/newer-7.md
+    kind: generic
+    sha256: aaaa7
+    bytes: 100
+    mtime: 2026-04-07T00:00:00Z
+    ingested_at: 2026-04-07T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-7.md
+  - path: raw/newer-8.md
+    kind: generic
+    sha256: aaaa8
+    bytes: 100
+    mtime: 2026-04-08T00:00:00Z
+    ingested_at: 2026-04-08T01:00:00Z
+    wiki_pages:
+      - wiki/sources/newer-8.md

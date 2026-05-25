@@ -234,6 +234,31 @@ case "$output" in
   *) assert_eq "scanned_at meta" "expected scanned_at: ..." "$output" ;;
 esac
 
+echo "==> candidates: both signals strong → composite high"
+V=$(make_vault both-high)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/both-signals-high/wiki/." "$V/wiki/"
+touch -t 202401010000 "$V/wiki/concepts/stale-page.md"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+signal=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/stale-page.md');process.stdout.write(e?e.signal:'(missing)')")
+assert_eq "stale-page composite" "high" "$signal"
+
+echo "==> candidates: only moved_past strong → composite not high/medium"
+V=$(make_vault moved-only)
+cp -R "$REPO_ROOT/tests/fixtures/staleness/moved-past-only/wiki/." "$V/wiki/"
+# Set padding pages to old mtime so recent-page is the newest (low age percentile).
+for pf in "$V/wiki/concepts/padding-"*.md "$V/wiki/entities/"*.md "$V/wiki/sources/"*.md; do
+  touch -t 202401010000 "$pf" 2>/dev/null || true
+done
+touch -t 202605200000 "$V/wiki/concepts/recent-page.md"
+cd "$V"
+node "$SCRIPT" candidates >/dev/null
+signal=$(node "$SCRIPT" list --json | node -e "const d=JSON.parse(require('fs').readFileSync(0));const e=d.pages.find(x=>x.path==='wiki/concepts/recent-page.md');process.stdout.write(e?e.signal:'(missing)')")
+case "$signal" in
+  high|medium) assert_eq "recent-page must not be high/medium" "low or absent" "$signal" ;;
+  *) assert_eq "recent-page composite OK" "ok" "ok" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

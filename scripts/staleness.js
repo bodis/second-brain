@@ -156,6 +156,63 @@ function walk(dir, vault, out) {
   }
 }
 
+function readSourcesYaml(vault) {
+  const abs = path.join(vault, 'wiki/.state/sources.yaml');
+  if (!fs.existsSync(abs)) return [];
+  const doc = yaml.load(fs.readFileSync(abs, 'utf8'), { schema: yaml.CORE_SCHEMA });
+  return Array.isArray(doc && doc.sources) ? doc.sources : [];
+}
+
+// Extract [[wikilink]] tokens from body prose, return resolved entity targets.
+// Only links resolving under wiki/entities/ count.
+function extractEntityWikilinks(vault, page) {
+  const abs = path.join(vault, page);
+  let text;
+  try { text = fs.readFileSync(abs, 'utf8'); } catch { return new Set(); }
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  const out = new Set();
+  const re = /\[\[([^\]\|]+?)(?:\|[^\]]+)?\]\]/g;
+  let m;
+  while ((m = re.exec(body))) {
+    const raw = m[1].trim();
+    const resolved = resolveEntityTarget(vault, raw);
+    if (resolved) out.add(resolved);
+  }
+  return out;
+}
+
+function resolveEntityTarget(vault, raw) {
+  const stripped = raw.replace(/\.md$/, '');
+  if (stripped.startsWith('wiki/entities/')) {
+    const cand = `${stripped}.md`;
+    if (fs.existsSync(path.join(vault, cand))) return cand;
+    return null;
+  }
+  const cand = `wiki/entities/${stripped}.md`;
+  if (fs.existsSync(path.join(vault, cand))) return cand;
+  return null;
+}
+
+function buildSourceEntityIndex(vault, sources) {
+  const out = new Map();
+  for (const s of sources) {
+    if (!s || !Array.isArray(s.wiki_pages)) { out.set(s ? s.path : null, new Set()); continue; }
+    const ents = new Set();
+    for (const wp of s.wiki_pages) {
+      for (const e of extractEntityWikilinks(vault, wp)) ents.add(e);
+    }
+    out.set(s.path, ents);
+  }
+  return out;
+}
+
+function tsMs(v) {
+  if (!v) return NaN;
+  if (v instanceof Date) return v.getTime();
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : NaN;
+}
+
 // Returns the fractional rank of x in the sorted-ascending array `sorted`
 // (number of values ≤ x divided by length). Returns 0 when sorted is empty.
 function fractionalRank(sorted, x) {
@@ -211,15 +268,44 @@ function cmdCandidates(vault, args) {
   }
   const sortedMtimes = [...mtimes].sort((a, b) => a - b);
 
-  // 2. Per-page scoring. Older mtime = higher age_percentile.
-  // age_percentile = 1 - fractionalRank(sortedMtimes, this mtime).
+  // 2a. Build source-entity index once.
+  const sources = readSourcesYaml(vault);
+  const sourceEnts = buildSourceEntityIndex(vault, sources);
+
+  // 2b. Cache each candidate page's entity wikilinks.
+  const pageEnts = new Map();
+  for (const p of pages) pageEnts.set(p, extractEntityWikilinks(vault, p));
+
+  // 2c. For each page, count sources ingested after the page's mtime
+  // whose entity-link set overlaps.
+  const rawMovedPast = new Map();
+  for (const p of pages) {
+    const pageMtime = stats.get(p).mtimeMs;
+    const myEnts = pageEnts.get(p);
+    let count = 0;
+    if (myEnts.size > 0) {
+      for (const s of sources) {
+        const ts = tsMs(s.ingested_at);
+        if (!Number.isFinite(ts) || ts <= pageMtime) continue;
+        const ents = sourceEnts.get(s.path) || new Set();
+        let overlap = false;
+        for (const e of ents) { if (myEnts.has(e)) { overlap = true; break; } }
+        if (overlap) count += 1;
+      }
+    }
+    rawMovedPast.set(p, count);
+  }
+  const sortedMoved = [...rawMovedPast.values()].sort((a, b) => a - b);
+
+  // 2d. Score every page.
   const scored = [];
   for (const p of pages) {
     const s = stats.get(p);
-    const rank = fractionalRank(sortedMtimes, s.mtimeMs);
-    const agePercentile = 1 - rank;
-    const movedPastPercentile = 0;   // implemented in Task 5
-    const newerOverlappingSources = 0;
+    const ageRank = fractionalRank(sortedMtimes, s.mtimeMs);
+    const agePercentile = 1 - ageRank;
+    const mpRaw = rawMovedPast.get(p);
+    // Zero overlapping sources means the signal is absent; rank only positive counts.
+    const movedPastPercentile = mpRaw === 0 ? 0 : fractionalRank(sortedMoved, mpRaw);
     const score = agePercentile * movedPastPercentile;
     const ageTier = tierFromCutoffs(agePercentile);
     const movedTier = tierFromCutoffs(movedPastPercentile);
@@ -230,7 +316,7 @@ function cmdCandidates(vault, args) {
       factors: {
         age_months: Number(ageMonths(s.mtimeMs).toFixed(1)),
         age_percentile: Number(agePercentile.toFixed(3)),
-        newer_overlapping_sources: newerOverlappingSources,
+        newer_overlapping_sources: mpRaw,
         moved_past_percentile: Number(movedPastPercentile.toFixed(3)),
       },
       score,
