@@ -131,13 +131,33 @@ function findEntry(doc, id) {
 
 function cmdCandidates() { die('candidates: not implemented yet', 2); }
 
-function cmdList(vault, _args) {
+function parseCommaList(v) {
+  if (!v || v === true) return null;
+  return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function cmdList(vault, args) {
   const doc = readState(vault);
-  if (!doc) {
-    process.stdout.write(JSON.stringify({ pages: [] }, null, 2) + '\n');
+  const all = doc ? (doc.pages || []) : [];
+  const statusFilter = parseCommaList(args.status);
+  const signalFilter = parseCommaList(args.signal);
+  const filtered = all.filter((e) => {
+    if (!e) return false;
+    if (statusFilter && !statusFilter.includes(e.status)) return false;
+    if (signalFilter && !signalFilter.includes(e.signal)) return false;
+    return true;
+  });
+  if (args.json) {
+    process.stdout.write(JSON.stringify({ pages: filtered }, null, 2) + '\n');
     return;
   }
-  process.stdout.write(JSON.stringify({ pages: doc.pages }, null, 2) + '\n');
+  if (filtered.length === 0) {
+    process.stdout.write('(no entries)\n');
+    return;
+  }
+  for (const e of filtered) {
+    process.stdout.write(`${e.id}\t${e.path}\t${e.status}\t${e.signal}\n`);
+  }
 }
 function cmdJudge()      { die('judge: not implemented yet', 2); }
 function cmdResolve()    { die('resolve: not implemented yet', 2); }

@@ -126,6 +126,77 @@ case "$output" in
   *) assert_eq "error mentions schema_version" "expected 'schema_version is 0'" "$output" ;;
 esac
 
+echo "==> list --status=unjudged returns only unjudged entries"
+V=$(make_vault list-status)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    status: unjudged
+  - id: 2026-05-25-002
+    path: wiki/concepts/b.md
+    signal: high
+    status: unreviewed
+  - id: 2026-05-25-003
+    path: wiki/concepts/c.md
+    signal: medium
+    status: resolved
+    resolution: refreshed
+YAML
+cd "$V"
+output=$(node "$SCRIPT" list --status=unjudged --json)
+count=$(echo "$output" | grep -c '"id":')
+assert_eq "unjudged count" "1" "$count"
+case "$output" in
+  *2026-05-25-001*) assert_eq "id 001 present" "ok" "ok" ;;
+  *) assert_eq "id 001 present" "expected 2026-05-25-001 in output" "$output" ;;
+esac
+
+echo "==> list --signal=high returns only high-tier entries"
+V=$(make_vault list-signal)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    status: unreviewed
+  - id: 2026-05-25-002
+    path: wiki/concepts/b.md
+    signal: medium
+    status: unreviewed
+  - id: 2026-05-25-003
+    path: wiki/concepts/c.md
+    signal: low
+    status: unjudged
+YAML
+cd "$V"
+output=$(node "$SCRIPT" list --signal=high --json)
+count=$(echo "$output" | grep -c '"id":')
+assert_eq "high count" "1" "$count"
+
+echo "==> list default human output"
+V=$(make_vault list-human)
+cat > "$V/wiki/.state/staleness.yaml" <<'YAML'
+schema_version: 1
+generated_by: scripts/staleness.js
+pages:
+  - id: 2026-05-25-001
+    path: wiki/concepts/a.md
+    signal: high
+    status: unreviewed
+YAML
+cd "$V"
+output=$(node "$SCRIPT" list)
+case "$output" in
+  *"2026-05-25-001"*"wiki/concepts/a.md"*"unreviewed"*"high"*) assert_eq "human format" "ok" "ok" ;;
+  *) assert_eq "human format" "id path status signal on one line" "$output" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
