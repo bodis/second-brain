@@ -52,7 +52,7 @@ claude
 /second-brain:onboard
 ```
 
-This installs four skills under the `second-brain:` namespace:
+This installs six skills under the `second-brain:` namespace:
 
 | Skill | What it does |
 |---|---|
@@ -60,6 +60,10 @@ This installs four skills under the `second-brain:` namespace:
 | `/second-brain:ingest` | Process raw sources into wiki pages |
 | `/second-brain:query` | Ask questions against your wiki |
 | `/second-brain:lint` | Health-check the wiki |
+| `/second-brain:reorganize` | Structural refactor — merge, recategorise, type relations |
+| `/second-brain:status` | Single dashboard for everything pending (the morning check) |
+
+See [docs/USER-GUIDE.md](docs/USER-GUIDE.md) for the day-to-day workflow and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the system is built.
 
 ## Quick Start
 
@@ -118,6 +122,12 @@ In Obsidian, set Settings → Files and links → Attachment folder path to `raw
 
 **How often should I lint?**
 After every 10 ingests or monthly — whichever comes first. Also run it before any major query or synthesis work.
+
+## Documentation
+
+- **[User Guide](docs/USER-GUIDE.md)** — daily/weekly cadence, the four workflows, headless mode
+- **[Architecture](docs/ARCHITECTURE.md)** — how it's built, state files, scripts vs LLM split, how to extend
+- **[Headless driving](docs/install/headless-driving.md)** — cron pattern for hands-off operation
 
 ## Based On
 
