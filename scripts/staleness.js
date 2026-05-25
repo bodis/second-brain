@@ -72,8 +72,73 @@ function parseArgs(argv) {
   return out;
 }
 
+function nowIso() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function readState(vault) {
+  const abs = path.join(vault, STATE_FILE);
+  if (!fs.existsSync(abs)) return null;
+  let doc;
+  try {
+    doc = yaml.load(fs.readFileSync(abs, 'utf8'), { schema: yaml.CORE_SCHEMA });
+  } catch (e) {
+    die(`failed to parse ${STATE_FILE}: ${e.message}`, 2);
+  }
+  if (!doc || typeof doc !== 'object') die(`${STATE_FILE} is not a YAML mapping`, 2);
+  if (doc.schema_version !== SCHEMA_VERSION) {
+    die(`${STATE_FILE} schema_version is ${doc.schema_version}, expected ${SCHEMA_VERSION}`, 2);
+  }
+  if (!Array.isArray(doc.pages)) doc.pages = [];
+  return doc;
+}
+
+// Atomic write: tmpfile + rename.
+function writeState(vault, doc) {
+  doc.schema_version = SCHEMA_VERSION;
+  doc.generated_by = GENERATED_BY;
+  const abs = path.join(vault, STATE_FILE);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  const tmp = `${abs}.tmp.${process.pid}.${Date.now()}`;
+  const out = yaml.dump(doc, { indent: 2, sortKeys: false, lineWidth: -1 });
+  fs.writeFileSync(tmp, out);
+  fs.renameSync(tmp, abs);
+}
+
+function todayDateStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Allocate the next id for today, given the existing entries (any date).
+// Format: YYYY-MM-DD-NNN. NNN zero-padded to 3 digits.
+function allocateId(existingEntries) {
+  const today = todayDateStr();
+  let maxN = 0;
+  for (const e of existingEntries) {
+    if (!e || !e.id) continue;
+    const m = /^(\d{4}-\d{2}-\d{2})-(\d{3})$/.exec(e.id);
+    if (!m) continue;
+    if (m[1] !== today) continue;
+    const n = parseInt(m[2], 10);
+    if (n > maxN) maxN = n;
+  }
+  return `${today}-${String(maxN + 1).padStart(3, '0')}`;
+}
+
+function findEntry(doc, id) {
+  return (doc.pages || []).find((e) => e && e.id === id) || null;
+}
+
 function cmdCandidates() { die('candidates: not implemented yet', 2); }
-function cmdList()       { die('list: not implemented yet', 2); }
+
+function cmdList(vault, _args) {
+  const doc = readState(vault);
+  if (!doc) {
+    process.stdout.write(JSON.stringify({ pages: [] }, null, 2) + '\n');
+    return;
+  }
+  process.stdout.write(JSON.stringify({ pages: doc.pages }, null, 2) + '\n');
+}
 function cmdJudge()      { die('judge: not implemented yet', 2); }
 function cmdResolve()    { die('resolve: not implemented yet', 2); }
 function cmdApplyRefresh(){die('apply-refresh: not implemented yet', 2); }

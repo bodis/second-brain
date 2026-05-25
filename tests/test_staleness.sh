@@ -112,6 +112,20 @@ case "$OUT" in
     FAIL=$((FAIL + 1));;
 esac
 
+echo "==> Schema mismatch on read → exit 2"
+V=$(make_vault schema-mismatch-vault)
+cp "$REPO_ROOT/tests/fixtures/staleness/schema-mismatch/wiki/.state/staleness.yaml" "$V/wiki/.state/"
+cd "$V"
+set +e
+output=$(node "$SCRIPT" list 2>&1)
+rc=$?
+set -e
+assert_eq "exit code" "2" "$rc"
+case "$output" in
+  *"schema_version is 0"*) assert_eq "error mentions schema_version" "ok" "ok" ;;
+  *) assert_eq "error mentions schema_version" "expected 'schema_version is 0'" "$output" ;;
+esac
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
